@@ -37,6 +37,10 @@ endlibrary
 */
 library Tenet initializer Init requires Utility
 
+    globals
+        constant real TIMER_PERIODIC_INTERVAL = 0.10
+    endglobals
+
 interface ChangeEvent
     public method onChange takes nothing returns nothing
     public method restore takes nothing returns nothing
@@ -54,6 +58,7 @@ interface TimeLine
     public method getStartTimeFrame takes nothing returns TimeFrame
     public method getTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
     public method getTimeFramesSize takes nothing returns integer
+    public method hasTimeFrame takes integer timeDeltaFromStartFrame returns boolean
     public method addTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
     public method flushAllFrom takes integer fromTimeDeltaFromStartFrame returns nothing
 
@@ -65,6 +70,8 @@ interface TimeLine
 endinterface
 
 interface TimeObject
+    public method getName takes nothing returns string
+
     public method getStartTime takes nothing returns integer
     public method isInverted takes nothing returns boolean
     public method getTimeLine takes nothing returns TimeLine
@@ -72,6 +79,7 @@ interface TimeObject
     public method setIsRecordingChanges takes boolean isRecordingChanges returns nothing
     public method isRecordingChanges takes nothing returns boolean
     public method recordChanges takes integer time returns nothing
+    public method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
 endinterface
 
 interface Time
@@ -92,6 +100,7 @@ interface Time
     public method resume takes nothing returns nothing
 
     public method addTimeOfDay takes nothing returns nothing
+    public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
     public method addUnit takes boolean inverted, unit whichUnit returns nothing
     public method addUnitCopy takes boolean inverted, unit whichUnit, real x, real y, real facing returns unit
 
@@ -115,6 +124,56 @@ struct ChangeEventTimeOfDay extends ChangeEvent
     public stub method restore takes nothing returns nothing
         call PrintMsg("restoring time of day: " + R2S(this.getTimeOfDay()))
         call SetTimeOfDay(this.getTimeOfDay())
+    endmethod
+
+endstruct
+
+struct ChangeEventMusicTime extends ChangeEvent
+    private Time whichTime
+    private string whichMusic
+    private string whichMusicInverted
+    private real offset
+
+    public stub method onChange takes nothing returns nothing
+        set this.offset = I2R(this.whichTime.getTime()) * TIMER_PERIODIC_INTERVAL
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call PlayMusicExBJ(this.whichMusicInverted, this.offset, 0)
+    endmethod
+
+    public static method create takes Time whichTime, string whichMusic, string whichMusicInverted returns thistype
+        local thistype this = thistype.allocate()
+        set this.whichTime = whichTime
+        set this.whichMusic = whichMusic
+        set this.whichMusicInverted = whichMusicInverted
+
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventMusicTimeInverted extends ChangeEvent
+    private Time whichTime
+    private string whichMusic
+    private string whichMusicInverted
+    private real offset
+
+    public stub method onChange takes nothing returns nothing
+        set this.offset = I2R(this.whichTime.getTime()) * TIMER_PERIODIC_INTERVAL
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call PlayMusicExBJ(this.whichMusic, this.offset, 0)
+    endmethod
+
+    public static method create takes Time whichTime, string whichMusic, string whichMusicInverted returns thistype
+        local thistype this = thistype.allocate()
+        set this.whichTime = whichTime
+        set this.whichMusic = whichMusic
+        set this.whichMusicInverted = whichMusicInverted
+
+        return this
     endmethod
 
 endstruct
@@ -148,11 +207,13 @@ struct ChangeEventUnitPosition extends ChangeEventUnit
     public stub method onChange takes nothing returns nothing
         set this.x = GetUnitX(this.getUnit())
         set this.y = GetUnitX(this.getUnit())
+        call PrintMsg("Change unit position on recording: " + GetUnitName(this.getUnit()))
     endmethod
 
     public stub method restore takes nothing returns nothing
         call SetUnitX(getUnit(), this.x)
         call SetUnitY(getUnit(), this.y)
+        call PrintMsg("Restore unit position: " + GetUnitName(this.getUnit()))
     endmethod
 
 endstruct
@@ -162,10 +223,12 @@ struct ChangeEventUnitFacing extends ChangeEventUnit
 
     public stub method onChange takes nothing returns nothing
         set this.facing = GetUnitFacing(this.getUnit())
+        call PrintMsg("Change unit facing on recording: " + GetUnitName(this.getUnit()))
     endmethod
 
     public stub method restore takes nothing returns nothing
         call SetUnitFacing(this.getUnit(), this.facing)
+        call PrintMsg("Restore unit facing: " + GetUnitName(this.getUnit()))
     endmethod
 
 endstruct
@@ -199,11 +262,37 @@ endstruct
 struct ChangeEventUnitDeath extends ChangeEventUnit
 
     public stub method onChange takes nothing returns nothing
-        call KillUnit(this.getUnit())
+        //call KillUnit(this.getUnit())
     endmethod
 
     public stub method restore takes nothing returns nothing
         // TODO ressurrect with dummy spell
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitExists extends ChangeEventUnit
+
+    public stub method onChange takes nothing returns nothing
+        //call KillUnit(this.getUnit())
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call ShowUnitHide(this.getUnit())
+        call PauseUnitBJ(true, this.getUnit())
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
+
+    public stub method onChange takes nothing returns nothing
+        //call KillUnit(this.getUnit())
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call ShowUnitShow(this.getUnit())
+        call PauseUnitBJ(false, this.getUnit())
     endmethod
 
 endstruct
@@ -235,11 +324,12 @@ struct TimeFrameImpl extends TimeFrame
     endmethod
 
     public stub method restore takes nothing returns nothing
-        local integer i = 0
+        local integer i = this.changeEventsSize - 1
+        call PrintMsg("Restore events: " + I2S(this.changeEventsSize))
         loop
-            exitwhen (i == this.changeEventsSize)
+            exitwhen (i < 0)
             call this.changeEvents[i].restore()
-            set i = i + 1
+            set i = i - 1
         endloop
     endmethod
 
@@ -250,39 +340,53 @@ endstruct
  */
 struct TimeLineImpl extends TimeLine
     private TimeObject timeObject
-    private TimeFrame array timeFrames[100]
+    private hashtable timeFrames
+    // max time for a time frame
     private integer timeFramesSize = 0
 
     public stub method getStartTimeFrame takes nothing returns TimeFrame
-        return this.timeFrames[0]
+        return LoadIntegerBJ(0, 0, this.timeFrames)
     endmethod
 
     public stub method getTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
-        return this.timeFrames[timeDeltaFromStartFrame]
+        return LoadIntegerBJ(0, timeDeltaFromStartFrame, this.timeFrames)
     endmethod
 
     public stub method getTimeFramesSize takes nothing returns integer
         return this.timeFramesSize
     endmethod
 
+    public stub method hasTimeFrame takes integer timeDeltaFromStartFrame returns boolean
+        return HaveSavedValue(0, bj_HASHTABLE_INTEGER, timeDeltaFromStartFrame, this.timeFrames)
+    endmethod
+
     public stub method addTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
-        if (this.timeFramesSize < timeDeltaFromStartFrame + 1) then
-            set this.timeFramesSize = timeDeltaFromStartFrame + 1
-            // TODO if there are empty time frames in between print a warning!
+        local TimeFrame timeFrame = 0
+
+        if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
+            call PrintMsg("Warning: adding time frame although there already exists one in time line " + I2S(this) + " add delta: " + I2S(timeDeltaFromStartFrame))
         endif
 
-        set this.timeFrames[timeDeltaFromStartFrame] = TimeFrameImpl.create()
+        set timeFrame = TimeFrameImpl.create()
+        call SaveIntegerBJ(timeFrame, 0, timeDeltaFromStartFrame, dataHashTable)
 
-        return this.timeFrames[timeDeltaFromStartFrame]
+        if (timeDeltaFromStartFrame >= this.timeFramesSize) then
+            set this.timeFramesSize = timeDeltaFromStartFrame + 1
+        endif
+
+        return timeFrame
     endmethod
 
     public stub method flushAllFrom takes integer fromTimeDeltaFromStartFrame returns nothing
         local integer i = fromTimeDeltaFromStartFrame
+        call PrintMsg("Flush time line from " + I2S(i) + " to " + I2S(this.getTimeFramesSize()))
         loop
             exitwhen (i == this.getTimeFramesSize())
-            call this.timeFrames[i].flush()
-            call this.timeFrames[i].destroy()
-            set this.timeFrames[i] = 0
+            if (this.hasTimeFrame(i)) then
+                call this.getTimeFrame(i).flush()
+                call this.getTimeFrame(i).destroy()
+                call FlushChildHashtableBJ(i, dataHashTable)
+            endif
             set i = i + 1
         endloop
         set this.timeFramesSize = fromTimeDeltaFromStartFrame
@@ -290,8 +394,10 @@ struct TimeLineImpl extends TimeLine
 
     public stub method restore takes integer time returns boolean
         local integer start = this.timeObject.getStartTime()
-        local integer end = getTimeFramesSize()
+        local integer end = start + getTimeFramesSize()
         local integer timeDeltaFromStartFrame = time - start
+
+        call PrintMsg("Restore time line " + I2S(this) + " at time " + I2S(time))
 
         if (this.timeObject.isInverted()) then
             set end = start
@@ -299,8 +405,11 @@ struct TimeLineImpl extends TimeLine
             set timeDeltaFromStartFrame = time - start
         endif
 
-        if (timeDeltaFromStartFrame >= 0 and timeDeltaFromStartFrame < this.getTimeFramesSize()) then
-            call this.timeFrames[timeDeltaFromStartFrame].restore()
+        call PrintMsg("Start time " + I2S(start) + " and end time " + I2S(end) + " with delta " + I2S(timeDeltaFromStartFrame) + " and size of time frames " + I2S(this.getTimeFramesSize()))
+
+        if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
+            call PrintMsg("Restore time frame: " + I2S(this.getTimeFrame(timeDeltaFromStartFrame)))
+            call this.getTimeFrame(timeDeltaFromStartFrame).restore()
             return true
         endif
 
@@ -310,8 +419,14 @@ struct TimeLineImpl extends TimeLine
     public static method create takes TimeObject timeObject returns thistype
         local thistype this = thistype.allocate()
         set this.timeObject = timeObject
+        set this.timeFrames = InitHashtableBJ()
 
         return this
+    endmethod
+
+    public method onDestroy takes nothing returns nothing
+        call FlushParentHashtableBJ(this.timeFrames)
+        set this.timeFrames = null
     endmethod
 
 endstruct
@@ -321,6 +436,21 @@ struct TimeObjectImpl extends TimeObject
     private boolean inverted
     private TimeLine timeLine
     private boolean recordingChanges
+
+     public stub method getName takes nothing returns string
+        local string inverted = "no"
+        local string currentlyRecordingChanges = "no"
+
+        if (this.isInverted()) then
+            set inverted = "yes"
+        endif
+
+        if (this.isRecordingChanges()) then
+            set currentlyRecordingChanges = "yes"
+        endif
+
+        return " at start time " + I2S(startTime) + " and inverted " + inverted + " currently recording changes " + currentlyRecordingChanges
+    endmethod
 
     public stub method getStartTime takes nothing returns integer
         return startTime
@@ -345,7 +475,7 @@ struct TimeObjectImpl extends TimeObject
     public stub method recordChanges takes integer time returns nothing
     endmethod
 
-    public method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
+    public stub method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
         local integer timeDeltaFromStartFrame = 0
         local TimeFrame timeFrame = 0
 
@@ -374,6 +504,10 @@ endstruct
 
 struct TimeObjectTimeOfDay extends TimeObjectImpl
 
+    public stub method getName takes nothing returns string
+        return "time of day " + super.getName()
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
         call this.addChangeEvent(time, ChangeEventTimeOfDay.create())
         call PrintMsg("recordChanges for time of day")
@@ -387,13 +521,73 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
 
 endstruct
 
+struct TimeObjectMusic extends TimeObjectImpl
+    private Time whichTime
+    private string whichMusic
+    private string whichMusicInverted
+
+    public stub method getName takes nothing returns string
+        return "music"
+        //return "music " + super.getName()
+    endmethod
+
+    public stub method recordChanges takes integer time returns nothing
+        call this.addChangeEvent(time, ChangeEventMusicTime.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
+        call PrintMsg("recordChanges for music")
+    endmethod
+
+    public static method create takes integer startTime, boolean inverted, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichTime = whichTime
+        set this.whichMusic = whichMusic
+        set this.whichMusicInverted = whichMusicInverted
+        call this.setIsRecordingChanges(true)
+        return this
+    endmethod
+
+endstruct
+
+struct TimeObjectMusicInverted extends TimeObjectImpl
+    private Time whichTime
+    private string whichMusic
+    private string whichMusicInverted
+
+    public stub method getName takes nothing returns string
+        return "music inverted"
+        //return "music inverted " + super.getName()
+    endmethod
+
+    public stub method recordChanges takes integer time returns nothing
+        call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
+        call PrintMsg("recordChanges for music")
+    endmethod
+
+    public static method create takes integer startTime, boolean inverted, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichTime = whichTime
+        set this.whichMusic = whichMusic
+        set this.whichMusicInverted = whichMusicInverted
+        call this.setIsRecordingChanges(true)
+        // initial event to change the music forward
+        call this.recordChanges(startTime)
+        return this
+    endmethod
+
+endstruct
+
 struct TimeObjectUnit extends TimeObjectImpl
     private unit whichUnit
     private trigger orderTrigger
 
+    public stub method getName takes nothing returns string
+        return GetUnitName(this.whichUnit)
+        //return GetUnitName(whichUnit) + super.getName()
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
         call this.addChangeEvent(time, ChangeEventUnitPosition.create(whichUnit))
-        call PrintMsg("recordChanges for unit: " + GetUnitName(whichUnit))
+        call this.addChangeEvent(time, ChangeEventUnitFacing.create(whichUnit))
+        call PrintMsg("recordChanges for unit (position and facing): " + GetUnitName(whichUnit))
     endmethod
 
     private static method triggerFunctionOrder takes nothing returns nothing
@@ -417,18 +611,22 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.orderTrigger, function thistype.triggerFunctionOrder)
         call SaveData(this.orderTrigger, this)
 
+        call SaveData(this.whichUnit, this)
+
         return this
     endmethod
 
     public method onDestroy takes nothing returns nothing
+        call FlushData(this.whichUnit)
         call FlushData(this.orderTrigger)
         call DestroyTrigger(this.orderTrigger)
+        set this.orderTrigger = null
     endmethod
 
 endstruct
 
 struct TimeImpl extends Time
-    private integer time
+    private integer time = 0
     private boolean inverted = false
     private TimeObject array timeObjects[100]
     private integer timeObjectsSize = 0
@@ -441,19 +639,23 @@ struct TimeImpl extends Time
         set this.time = time
         set i = 0
         loop
-            exitwhen (i == this.timeObjectsSize)
+            exitwhen (i == this.getObjectsSize())
+            call PrintMsg("Time object with index " + I2S(i))
             set timeObject = this.timeObjects[i]
             set timeLine = timeObject.getTimeLine()
             if (timeObject.isInverted() != this.isInverted()) then
                 // restore not inverted time line if possible
                 call timeLine.restore(time)
             elseif (timeObject.isRecordingChanges()) then
+                call PrintMsg("Record changes for object: " + timeObject.getName())
                 call timeObject.recordChanges(time)
+            else
+                call PrintMsg("Neither recording nor restoring object: " + timeObject.getName())
             endif
             set i = i + 1
         endloop
 
-        call PrintMsg("setTime: " + I2S(time))
+        call PrintMsg("setTime: " + I2S(this.time) + " with " + I2S(this.getObjectsSize()) + " objects")
     endmethod
 
     public stub method getTime takes nothing returns integer
@@ -471,7 +673,7 @@ struct TimeImpl extends Time
         set this.inverted = inverted
         set i = 0
         loop
-            exitwhen (i == this.timeObjectsSize)
+            exitwhen (i == this.getObjectsSize())
             set timeObject = this.timeObjects[i]
             set timeLine = timeObject.getTimeLine()
             // flush all changes from now
@@ -510,7 +712,7 @@ struct TimeImpl extends Time
     public stub method start takes nothing returns nothing
         call PrintMsg("Start timer")
         set this.time = 0
-        call TimerStart(this.whichTimer, 0.10, true, function thistype.TimerFunction)
+        call TimerStart(this.whichTimer, TIMER_PERIODIC_INTERVAL, true, function thistype.TimerFunction)
     endmethod
 
     public stub method pause takes nothing returns nothing
@@ -525,8 +727,16 @@ struct TimeImpl extends Time
         call this.addObject(TimeObjectTimeOfDay.create(this.getTime(), false))
     endmethod
 
+    public stub method addMusic takes string whichMusic, string whichMusicInverted returns nothing
+        call this.addObject(TimeObjectMusic.create(this.getTime(), false, this, whichMusic, whichMusicInverted))
+        call this.addObject(TimeObjectMusicInverted.create(this.getTime(), true, this, whichMusic, whichMusicInverted))
+    endmethod
+
     public stub method addUnit takes boolean inverted, unit whichUnit returns nothing
-        call this.addObject(TimeObjectUnit.create(whichUnit, this.getTime(), inverted))
+        local integer index = this.addObject(TimeObjectUnit.create(whichUnit, this.getTime(), inverted))
+        // adding these two change events will lead to hiding and pausing the unit before it existed
+        call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitDoesNotExist.create(whichUnit))
+        call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitExists.create(whichUnit))
     endmethod
 
     public stub method addUnitCopy takes boolean inverted, unit whichUnit, real x, real y, real facing returns unit
