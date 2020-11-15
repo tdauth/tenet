@@ -1,19 +1,23 @@
 library Utility
 
 globals
-    hashtable dataHashTable = InitHashtableBJ()
+    hashtable dataHashTable = InitHashtable()
 endglobals
 
 function SaveData takes handle whichHandle, integer data returns nothing
-    call SaveIntegerBJ(data, 0, GetHandleId(whichHandle), dataHashTable)
+    call SaveInteger(dataHashTable, GetHandleId(whichHandle), 0, data)
 endfunction
 
 function LoadData takes handle whichHandle returns integer
-    return LoadIntegerBJ(0, GetHandleId(whichHandle), dataHashTable)
+    return LoadInteger(dataHashTable, GetHandleId(whichHandle), 0)
+endfunction
+
+function HaveSavedData takes handle whichHandle returns boolean
+    return HaveSavedInteger(dataHashTable, GetHandleId(whichHandle), 0)
 endfunction
 
 function FlushData takes handle whichHandle returns nothing
-    call FlushChildHashtableBJ(GetHandleId(whichHandle), dataHashTable)
+    call FlushChildHashtable(dataHashTable, GetHandleId(whichHandle))
 endfunction
 
 function PrintMsg takes string msg returns nothing
@@ -23,23 +27,26 @@ endfunction
 endlibrary
 
 
-/*
-* Die Idee:
-* - Eine Einheit/ein Objekt ist entweder invertiert oder nicht invertiert.
-* - Jede Einheit/jedes Objekt hat seine eigene Zeitlinie.
-* - Eine Zeitlinie beginnt zu einem bestimmten Zeitpunkt (globale Uhr) und besteht aus Zeitpunkten (time frame), die global gültig sind (es gibt eine globale Uhr aus Ticks).
-* - Jeder Zeitpunkt enthält Änderungen für die Einheit/das Objekt.
-* - Wenn die aktuelle Zeit nicht invertiert ist, dann werden die invertierten Einheiten automatisch anhand ihrer Zeitlinie bewegt so weit bis sie erschienen sind (dann verschwinden sie)
-* - Wenn die aktuelle Zeit invertiert ist, werden die nicht invertierten Einheiten automatisch anhand ihrer Zeitlinie bewegt bis zum Anfang der Zeit. Die Zeit kann dann negativ werden und die invertierten Einheiten können irgendwas bauen, das dann aber wieder verschwinden würde.
-* - Wenn Einheiten wieder gesteuert werden können, wenn es vorwärts oder rückwärts geht, wird ihre alte gespeicherte Zeitlinie nach vorne verworfen! So werden immer nur die aktuellen Änderungen gespeichert.
-
-* - So muss man nicht mehrere Zeitlinien anzeigen/speichern sondern nur die Zeitlinie pro Einheit/Objekt und auch nur die Änderungen, die wieder her gestellt werden müssen.
+/**
+ * The concept:
+ * - There is a global time which consist of a global clock (integer) and added objects and is either inverted or not.
+ * - Every added object/unit is either inverted or not.
+ * - Every object/unit has its own time line.
+ * - A time line starts at a certain time (global clock) and consist of certain time points (time frame).
+ * - Every time frame consists of change events for the object/unit.
+ * - The change events can be anything and must be able to be inverted.
+ * - If the global time is not inverted then all inverted objects/units will get restored all change events of their time line at the corresponding time frames.
+ * - If the global time is inverted then all not inverted objects/units will get restored all change events of their time line at the corresponding time frames.
+ * - If a unit is not restored it can be controlled again and its stored time line will be flushed, so we do not have to keep all changes which will be overriden.
+ * - If a copy is created of a unit by going forward or backwards it will disappear if time goes back/forward to its creation.
+ * - We can actually go backwards in time to a negative global clock value (so before the map has even started). Everything will stand around then?
+ * - This kind of system allows us to minimize the stored changes and time lines.
 */
 library Tenet initializer Init requires Utility
 
-    globals
-        constant real TIMER_PERIODIC_INTERVAL = 0.10
-    endglobals
+globals
+    constant real TIMER_PERIODIC_INTERVAL = 0.10
+endglobals
 
 interface ChangeEvent
     public method onChange takes nothing returns nothing
@@ -94,6 +101,8 @@ interface Time
 
     public method addObject takes TimeObject timeObject returns integer
     public method getObjectsSize takes nothing returns integer
+    public method getNormalObjectsSize takes nothing returns integer
+    public method getInvertedObjectsSize takes nothing returns integer
 
     public method start takes nothing returns nothing
     public method pause takes nothing returns nothing
@@ -182,7 +191,7 @@ struct ChangeEventUnit extends ChangeEvent
     private unit whichUnit
 
     public method getUnit takes nothing returns unit
-        return whichUnit
+        return this.whichUnit
     endmethod
 
     public stub method onChange takes nothing returns nothing
@@ -345,11 +354,11 @@ struct TimeLineImpl extends TimeLine
     private integer timeFramesSize = 0
 
     public stub method getStartTimeFrame takes nothing returns TimeFrame
-        return LoadIntegerBJ(0, 0, this.timeFrames)
+        return this.getTimeFrame(0)
     endmethod
 
     public stub method getTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
-        return LoadIntegerBJ(0, timeDeltaFromStartFrame, this.timeFrames)
+        return LoadInteger(this.timeFrames, timeDeltaFromStartFrame, 0)
     endmethod
 
     public stub method getTimeFramesSize takes nothing returns integer
@@ -357,7 +366,7 @@ struct TimeLineImpl extends TimeLine
     endmethod
 
     public stub method hasTimeFrame takes integer timeDeltaFromStartFrame returns boolean
-        return HaveSavedValue(0, bj_HASHTABLE_INTEGER, timeDeltaFromStartFrame, this.timeFrames)
+        return HaveSavedInteger(this.timeFrames, timeDeltaFromStartFrame, 0)
     endmethod
 
     public stub method addTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
@@ -368,7 +377,7 @@ struct TimeLineImpl extends TimeLine
         endif
 
         set timeFrame = TimeFrameImpl.create()
-        call SaveIntegerBJ(timeFrame, 0, timeDeltaFromStartFrame, dataHashTable)
+        call SaveInteger(this.timeFrames, timeDeltaFromStartFrame, 0, timeFrame)
 
         if (timeDeltaFromStartFrame >= this.timeFramesSize) then
             set this.timeFramesSize = timeDeltaFromStartFrame + 1
@@ -385,7 +394,7 @@ struct TimeLineImpl extends TimeLine
             if (this.hasTimeFrame(i)) then
                 call this.getTimeFrame(i).flush()
                 call this.getTimeFrame(i).destroy()
-                call FlushChildHashtableBJ(i, dataHashTable)
+                call FlushChildHashtable(this.timeFrames, 0)
             endif
             set i = i + 1
         endloop
@@ -397,9 +406,10 @@ struct TimeLineImpl extends TimeLine
         local integer end = start + getTimeFramesSize()
         local integer timeDeltaFromStartFrame = time - start
 
-        call PrintMsg("Restore time line " + I2S(this) + " at time " + I2S(time))
+        call PrintMsg("Restore time line " + I2S(this) + " at time " + I2S(time) + " of " + this.timeObject.getName())
 
         if (this.timeObject.isInverted()) then
+             call PrintMsg("Time line is inverted!")
             set end = start
             set start = start - getTimeFramesSize()
             set timeDeltaFromStartFrame = time - start
@@ -419,13 +429,13 @@ struct TimeLineImpl extends TimeLine
     public static method create takes TimeObject timeObject returns thistype
         local thistype this = thistype.allocate()
         set this.timeObject = timeObject
-        set this.timeFrames = InitHashtableBJ()
+        set this.timeFrames = InitHashtable()
 
         return this
     endmethod
 
     public method onDestroy takes nothing returns nothing
-        call FlushParentHashtableBJ(this.timeFrames)
+        call FlushParentHashtable(this.timeFrames)
         set this.timeFrames = null
     endmethod
 
@@ -437,19 +447,19 @@ struct TimeObjectImpl extends TimeObject
     private TimeLine timeLine
     private boolean recordingChanges
 
-     public stub method getName takes nothing returns string
+    public stub method getName takes nothing returns string
         local string inverted = "no"
         local string currentlyRecordingChanges = "no"
 
-        if (this.isInverted()) then
+        if (this.inverted) then
             set inverted = "yes"
         endif
 
-        if (this.isRecordingChanges()) then
+        if (this.recordingChanges) then
             set currentlyRecordingChanges = "yes"
         endif
 
-        return " at start time " + I2S(startTime) + " and inverted " + inverted + " currently recording changes " + currentlyRecordingChanges
+        return " at start time " + I2S(this.startTime) + " and inverted " + inverted + " currently recording changes " + currentlyRecordingChanges
     endmethod
 
     public stub method getStartTime takes nothing returns integer
@@ -527,8 +537,7 @@ struct TimeObjectMusic extends TimeObjectImpl
     private string whichMusicInverted
 
     public stub method getName takes nothing returns string
-        return "music"
-        //return "music " + super.getName()
+        return "music " + super.getName()
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -553,8 +562,7 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
     private string whichMusicInverted
 
     public stub method getName takes nothing returns string
-        return "music inverted"
-        //return "music inverted " + super.getName()
+        return "music inverted " + super.getName()
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -580,8 +588,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger orderTrigger
 
     public stub method getName takes nothing returns string
-        return GetUnitName(this.whichUnit)
-        //return GetUnitName(whichUnit) + super.getName()
+        return GetUnitName(whichUnit) + super.getName()
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -623,6 +630,10 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.orderTrigger = null
     endmethod
 
+    public static method fromUnit takes unit whichUnit returns thistype
+        return LoadData(whichUnit)
+    endmethod
+
 endstruct
 
 struct TimeImpl extends Time
@@ -630,6 +641,8 @@ struct TimeImpl extends Time
     private boolean inverted = false
     private TimeObject array timeObjects[100]
     private integer timeObjectsSize = 0
+    private integer normalObjectsSize = 0
+    private integer timeInvertedObjectsSize = 0
     private timer whichTimer
 
     public stub method setTime takes integer time returns nothing
@@ -645,17 +658,17 @@ struct TimeImpl extends Time
             set timeLine = timeObject.getTimeLine()
             if (timeObject.isInverted() != this.isInverted()) then
                 // restore not inverted time line if possible
-                call timeLine.restore(time)
+                call timeLine.restore.evaluate(time)
             elseif (timeObject.isRecordingChanges()) then
-                call PrintMsg("Record changes for object: " + timeObject.getName())
-                call timeObject.recordChanges(time)
+                //call PrintMsg("Record changes for object: " + timeObject.getName())
+                call timeObject.recordChanges.evaluate(time)
             else
-                call PrintMsg("Neither recording nor restoring object: " + timeObject.getName())
+                //call PrintMsg("Neither recording nor restoring object: " + timeObject.getName())
             endif
             set i = i + 1
         endloop
 
-        call PrintMsg("setTime: " + I2S(this.time) + " with " + I2S(this.getObjectsSize()) + " objects")
+        call PrintMsg("setTime: " + I2S(this.getTime()) + " with " + I2S(this.getObjectsSize()) + " objects for time instance " + I2S(this))
     endmethod
 
     public stub method getTime takes nothing returns integer
@@ -688,6 +701,12 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addObject takes TimeObject timeObject returns integer
+        if (timeObject.isInverted()) then
+            set this.timeInvertedObjectsSize = this.timeInvertedObjectsSize + 1
+        else
+            set this.normalObjectsSize = this.normalObjectsSize + 1
+        endif
+
         set this.timeObjects[this.timeObjectsSize] = timeObject
         set this.timeObjectsSize = this.timeObjectsSize + 1
 
@@ -698,9 +717,17 @@ struct TimeImpl extends Time
         return this.timeObjectsSize
     endmethod
 
-    public static method TimerFunction takes nothing returns nothing
+    public stub method getNormalObjectsSize takes nothing returns integer
+        return this.normalObjectsSize
+    endmethod
+
+    public stub method getInvertedObjectsSize takes nothing returns integer
+        return this.timeInvertedObjectsSize
+    endmethod
+
+    public static method timerFunction takes nothing returns nothing
         local thistype this = LoadData(GetExpiredTimer())
-        call PrintMsg("Timer function")
+        call PrintMsg("Timer function for instance: " + I2S(this))
 
         if (this.isInverted()) then
             call this.setTime(this.getTime() - 1)
@@ -712,7 +739,7 @@ struct TimeImpl extends Time
     public stub method start takes nothing returns nothing
         call PrintMsg("Start timer")
         set this.time = 0
-        call TimerStart(this.whichTimer, TIMER_PERIODIC_INTERVAL, true, function thistype.TimerFunction)
+        call TimerStart(this.whichTimer, TIMER_PERIODIC_INTERVAL, true, function thistype.timerFunction)
     endmethod
 
     public stub method pause takes nothing returns nothing
@@ -777,6 +804,13 @@ struct TimeImpl extends Time
 
         return this
     endmethod
+
+    public method onDestroy takes nothing returns nothing
+        call this.pause()
+        call FlushData(this.whichTimer)
+        call DestroyTimer(this.whichTimer)
+        set this.whichTimer = null
+    endmethod
 endstruct
 
 globals
@@ -785,7 +819,6 @@ endglobals
 
 function Init takes nothing returns nothing
     set globalTime = TimeImpl.create()
-    call PrintMsg("Init Tenet")
 endfunction
 
 endlibrary
