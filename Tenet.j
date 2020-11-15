@@ -26,22 +26,6 @@ endfunction
 
 endlibrary
 
-
-/**
- * The concept:
- * - There is a global time which consist of a global clock (integer) and added objects and is either inverted or not.
- * - Every added object/unit is either inverted or not.
- * - Every object/unit has its own time line.
- * - A time line starts at a certain time (global clock) and consist of certain time points (time frame).
- * - Every time frame consists of change events for the object/unit.
- * - The change events can be anything and must be able to be inverted.
- * - If the global time is not inverted then all inverted objects/units will get restored all change events of their time line at the corresponding time frames.
- * - If the global time is inverted then all not inverted objects/units will get restored all change events of their time line at the corresponding time frames.
- * - If a unit is not restored it can be controlled again and its stored time line will be flushed, so we do not have to keep all changes which will be overriden.
- * - If a copy is created of a unit by going forward or backwards it will disappear if time goes back/forward to its creation.
- * - We can actually go backwards in time to a negative global clock value (so before the map has even started). Everything will stand around then?
- * - This kind of system allows us to minimize the stored changes and time lines.
-*/
 library Tenet initializer Init requires Utility
 
 globals
@@ -53,7 +37,7 @@ interface ChangeEvent
     public method restore takes nothing returns nothing
 endinterface
 
-interface TimeFrame
+interface TimeFrame[10000]
     public method getChangeEventsSize takes nothing returns integer
     public method addChangeEvent takes ChangeEvent changeEvent returns integer
     public method flush takes nothing returns nothing
@@ -67,7 +51,7 @@ interface TimeLine
     public method getTimeFramesSize takes nothing returns integer
     public method hasTimeFrame takes integer timeDeltaFromStartFrame returns boolean
     public method addTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
-    public method flushAllFrom takes integer fromTimeDeltaFromStartFrame returns nothing
+    public method flushAllFrom takes integer time returns nothing
 
     /*
      * Tries to restore the time frame at the given global time.
@@ -85,6 +69,7 @@ interface TimeObject
 
     public method setIsRecordingChanges takes boolean isRecordingChanges returns nothing
     public method isRecordingChanges takes nothing returns boolean
+    public method shouldStopRecordingChanges takes nothing returns boolean
     public method recordChanges takes integer time returns nothing
     public method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
 endinterface
@@ -131,7 +116,7 @@ struct ChangeEventTimeOfDay extends ChangeEvent
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("restoring time of day: " + R2S(this.getTimeOfDay()))
+        //call PrintMsg("restoring time of day: " + R2S(this.getTimeOfDay()))
         call SetTimeOfDay(this.getTimeOfDay())
     endmethod
 
@@ -216,13 +201,13 @@ struct ChangeEventUnitPosition extends ChangeEventUnit
     public stub method onChange takes nothing returns nothing
         set this.x = GetUnitX(this.getUnit())
         set this.y = GetUnitX(this.getUnit())
-        call PrintMsg("Change unit position on recording: " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Change unit position on recording: " + GetUnitName(this.getUnit()))
     endmethod
 
     public stub method restore takes nothing returns nothing
         call SetUnitX(getUnit(), this.x)
         call SetUnitY(getUnit(), this.y)
-        call PrintMsg("Restore unit position: " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Restore unit position: " + GetUnitName(this.getUnit()))
     endmethod
 
 endstruct
@@ -232,12 +217,12 @@ struct ChangeEventUnitFacing extends ChangeEventUnit
 
     public stub method onChange takes nothing returns nothing
         set this.facing = GetUnitFacing(this.getUnit())
-        call PrintMsg("Change unit facing on recording: " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Change unit facing on recording: " + GetUnitName(this.getUnit()))
     endmethod
 
     public stub method restore takes nothing returns nothing
         call SetUnitFacing(this.getUnit(), this.facing)
-        call PrintMsg("Restore unit facing: " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Restore unit facing: " + GetUnitName(this.getUnit()))
     endmethod
 
 endstruct
@@ -287,8 +272,12 @@ struct ChangeEventUnitExists extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call ShowUnitHide(this.getUnit())
-        call PauseUnitBJ(true, this.getUnit())
+        call thistype.invert(this.getUnit())
+    endmethod
+
+    public static method invert takes unit whichUnit returns nothing
+        call ShowUnitHide(whichUnit)
+        call PauseUnitBJ(true, whichUnit)
     endmethod
 
 endstruct
@@ -300,13 +289,19 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call ShowUnitShow(this.getUnit())
-        call PauseUnitBJ(false, this.getUnit())
+        call PrintMsg("Restore that unit did not exist for " + GetUnitName(this.getUnit()))
+        call thistype.invert(this.getUnit())
+    endmethod
+
+    public static method invert takes unit whichUnit returns nothing
+        call ShowUnitShow(whichUnit)
+        call PauseUnitBJ(false, whichUnit)
     endmethod
 
 endstruct
 
 struct TimeFrameImpl extends TimeFrame
+    private static constant integer MAX_CHANGE_EVENTS = 100
     private ChangeEvent array changeEvents[100]
     private integer changeEventsSize = 0
 
@@ -315,6 +310,10 @@ struct TimeFrameImpl extends TimeFrame
     endmethod
 
     public stub method addChangeEvent takes ChangeEvent changeEvent returns integer
+        if (this.getChangeEventsSize() >= thistype.MAX_CHANGE_EVENTS) then
+            call PrintMsg("Adding a change event when reached maximum of events with " + I2S(this.getChangeEventsSize()))
+        endif
+
         set this.changeEvents[this.changeEventsSize] = changeEvent
         set this.changeEventsSize = this.changeEventsSize + 1
 
@@ -342,6 +341,12 @@ struct TimeFrameImpl extends TimeFrame
         endloop
     endmethod
 
+    public static method create takes nothing returns thistype
+        local thistype this = thistype.allocate()
+        call PrintMsg("Constructor of time frame with instance: " + I2S(this))
+        return this
+    endmethod
+
 endstruct
 
 /*
@@ -349,7 +354,7 @@ endstruct
  */
 struct TimeLineImpl extends TimeLine
     private TimeObject timeObject
-    private hashtable timeFrames
+    private static hashtable timeFrames = InitHashtable()
     // max time for a time frame
     private integer timeFramesSize = 0
 
@@ -358,7 +363,13 @@ struct TimeLineImpl extends TimeLine
     endmethod
 
     public stub method getTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
-        return LoadInteger(this.timeFrames, timeDeltaFromStartFrame, 0)
+        local TimeFrame timeFrame = LoadInteger(thistype.timeFrames, this, timeDeltaFromStartFrame)
+
+        if (timeFrame == 0) then
+            call PrintMsg("Warning: Time frame is 0 at delta " + I2S(timeDeltaFromStartFrame) + " for object: " + this.timeObject.getName())
+        endif
+
+        return timeFrame
     endmethod
 
     public stub method getTimeFramesSize takes nothing returns integer
@@ -366,18 +377,23 @@ struct TimeLineImpl extends TimeLine
     endmethod
 
     public stub method hasTimeFrame takes integer timeDeltaFromStartFrame returns boolean
-        return HaveSavedInteger(this.timeFrames, timeDeltaFromStartFrame, 0)
+        return HaveSavedInteger(thistype.timeFrames, this, timeDeltaFromStartFrame)
     endmethod
 
     public stub method addTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
         local TimeFrame timeFrame = 0
 
         if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
-            call PrintMsg("Warning: adding time frame although there already exists one in time line " + I2S(this) + " add delta: " + I2S(timeDeltaFromStartFrame))
+            return this.getTimeFrame(timeDeltaFromStartFrame)
         endif
 
         set timeFrame = TimeFrameImpl.create()
-        call SaveInteger(this.timeFrames, timeDeltaFromStartFrame, 0, timeFrame)
+        // TODO sometimes it is 0?! When having like 80?!!?!!?!?
+        call PrintMsg("Adding time frame " + I2S(timeFrame) + " for object: " + this.timeObject.getName() + " at delta " + I2S(timeDeltaFromStartFrame))
+        if (timeFrame != 0) then
+            call SaveInteger(thistype.timeFrames, this, timeDeltaFromStartFrame, timeFrame)
+        endif
+        call PrintMsg("Time frame is now " + I2S(this.getTimeFrame(timeDeltaFromStartFrame)) + " for object: " + this.timeObject.getName())
 
         if (timeDeltaFromStartFrame >= this.timeFramesSize) then
             set this.timeFramesSize = timeDeltaFromStartFrame + 1
@@ -386,42 +402,51 @@ struct TimeLineImpl extends TimeLine
         return timeFrame
     endmethod
 
-    public stub method flushAllFrom takes integer fromTimeDeltaFromStartFrame returns nothing
-        local integer i = fromTimeDeltaFromStartFrame
-        call PrintMsg("Flush time line from " + I2S(i) + " to " + I2S(this.getTimeFramesSize()))
-        loop
-            exitwhen (i == this.getTimeFramesSize())
-            if (this.hasTimeFrame(i)) then
-                call this.getTimeFrame(i).flush()
-                call this.getTimeFrame(i).destroy()
-                call FlushChildHashtable(this.timeFrames, 0)
-            endif
-            set i = i + 1
-        endloop
-        set this.timeFramesSize = fromTimeDeltaFromStartFrame
-    endmethod
-
-    public stub method restore takes integer time returns boolean
+    private method getDeltaFromAbsoluteTime takes integer time returns integer
         local integer start = this.timeObject.getStartTime()
         local integer end = start + getTimeFramesSize()
         local integer timeDeltaFromStartFrame = time - start
 
-        call PrintMsg("Restore time line " + I2S(this) + " at time " + I2S(time) + " of " + this.timeObject.getName())
+        //call PrintMsg("Restore time line " + I2S(this) + " at time " + I2S(time) + " of " + this.timeObject.getName())
 
         if (this.timeObject.isInverted()) then
-             call PrintMsg("Time line is inverted!")
+            //call PrintMsg("Time line is inverted!")
             set end = start
             set start = start - getTimeFramesSize()
             set timeDeltaFromStartFrame = time - start
         endif
 
-        call PrintMsg("Start time " + I2S(start) + " and end time " + I2S(end) + " with delta " + I2S(timeDeltaFromStartFrame) + " and size of time frames " + I2S(this.getTimeFramesSize()))
+        return timeDeltaFromStartFrame
+    endmethod
+
+    public stub method flushAllFrom takes integer time returns nothing
+        local integer fromTimeDeltaFromStartFrame = this.getDeltaFromAbsoluteTime(time)
+        local integer i = fromTimeDeltaFromStartFrame
+        //call PrintMsg("Flush time line from delta " + I2S(i) + " to " + I2S(this.getTimeFramesSize()))
+        if (fromTimeDeltaFromStartFrame < this.getTimeFramesSize()) then
+            loop
+                exitwhen (i >= this.getTimeFramesSize())
+                if (this.hasTimeFrame(i)) then
+                    call this.getTimeFrame(i).flush()
+                    call this.getTimeFrame(i).destroy()
+                    call RemoveSavedInteger(thistype.timeFrames, this, i)
+                endif
+                set i = i + 1
+            endloop
+            set this.timeFramesSize = fromTimeDeltaFromStartFrame
+        endif
+    endmethod
+
+    public stub method restore takes integer time returns boolean
+        local integer timeDeltaFromStartFrame = this.getDeltaFromAbsoluteTime(time)
 
         if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
-            call PrintMsg("Restore time frame: " + I2S(this.getTimeFrame(timeDeltaFromStartFrame)))
+            call PrintMsg("Restore time frame: " + I2S(this.getTimeFrame(timeDeltaFromStartFrame)) + " for object " + timeObject.getName())
             call this.getTimeFrame(timeDeltaFromStartFrame).restore()
             return true
         endif
+
+        call PrintMsg("When restoring it has no time frame at: " + I2S(timeDeltaFromStartFrame) + " object: " + this.timeObject.getName())
 
         return false
     endmethod
@@ -429,14 +454,12 @@ struct TimeLineImpl extends TimeLine
     public static method create takes TimeObject timeObject returns thistype
         local thistype this = thistype.allocate()
         set this.timeObject = timeObject
-        set this.timeFrames = InitHashtable()
 
         return this
     endmethod
 
     public method onDestroy takes nothing returns nothing
-        call FlushParentHashtable(this.timeFrames)
-        set this.timeFrames = null
+        call FlushChildHashtable(this.timeFrames, this)
     endmethod
 
 endstruct
@@ -482,6 +505,10 @@ struct TimeObjectImpl extends TimeObject
         return this.recordingChanges
     endmethod
 
+    public stub method shouldStopRecordingChanges takes nothing returns boolean
+        return false
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
     endmethod
 
@@ -520,7 +547,7 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
 
     public stub method recordChanges takes integer time returns nothing
         call this.addChangeEvent(time, ChangeEventTimeOfDay.create())
-        call PrintMsg("recordChanges for time of day")
+        //call PrintMsg("recordChanges for time of day")
     endmethod
 
     public static method create takes integer startTime, boolean inverted returns thistype
@@ -542,7 +569,7 @@ struct TimeObjectMusic extends TimeObjectImpl
 
     public stub method recordChanges takes integer time returns nothing
         call this.addChangeEvent(time, ChangeEventMusicTime.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
-        call PrintMsg("recordChanges for music")
+        //call PrintMsg("recordChanges for music")
     endmethod
 
     public static method create takes integer startTime, boolean inverted, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
@@ -567,7 +594,7 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
 
     public stub method recordChanges takes integer time returns nothing
         call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
-        call PrintMsg("recordChanges for music")
+        //call PrintMsg("recordChanges for music")
     endmethod
 
     public static method create takes integer startTime, boolean inverted, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
@@ -591,19 +618,23 @@ struct TimeObjectUnit extends TimeObjectImpl
         return GetUnitName(whichUnit) + super.getName()
     endmethod
 
+    public stub method shouldStopRecordingChanges takes nothing returns boolean
+        return GetUnitCurrentOrder(this.whichUnit) == String2OrderIdBJ("none")
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
+        //call PrintMsg("recordChanges for unit (position and facing): " + GetUnitName(whichUnit))
         call this.addChangeEvent(time, ChangeEventUnitPosition.create(whichUnit))
         call this.addChangeEvent(time, ChangeEventUnitFacing.create(whichUnit))
-        call PrintMsg("recordChanges for unit (position and facing): " + GetUnitName(whichUnit))
     endmethod
 
     private static method triggerFunctionOrder takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call PrintMsg("Order for unit: " + GetUnitName(this.whichUnit))
-        if (GetIssuedOrderIdBJ() == String2OrderIdBJ("move")) then
-            call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
+        //call PrintMsg("Order for unit: " + GetUnitName(this.whichUnit) + " with time object " + I2S(this))
+        if (GetIssuedOrderId() == String2OrderIdBJ("move") or GetIssuedOrderId() == String2OrderIdBJ("smart")) then
+            //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
             call this.setIsRecordingChanges(true)
-        elseif (GetIssuedOrderIdBJ() == String2OrderIdBJ("stop")) then
+        elseif (GetIssuedOrderId() == String2OrderIdBJ("stop") or GetIssuedOrderId() == String2OrderIdBJ("halt")) then
             call PrintMsg("Stop order for unit: " + GetUnitName(this.whichUnit))
             call this.setIsRecordingChanges(false)
         endif
@@ -639,6 +670,7 @@ endstruct
 struct TimeImpl extends Time
     private integer time = 0
     private boolean inverted = false
+    private static constant integer MAX_TIME_OBJECTS = 100
     private TimeObject array timeObjects[100]
     private integer timeObjectsSize = 0
     private integer normalObjectsSize = 0
@@ -653,22 +685,27 @@ struct TimeImpl extends Time
         set i = 0
         loop
             exitwhen (i == this.getObjectsSize())
-            call PrintMsg("Time object with index " + I2S(i))
             set timeObject = this.timeObjects[i]
             set timeLine = timeObject.getTimeLine()
+            //call PrintMsg("Time object with index " + I2S(i) + " with name " + timeObject.getName())
             if (timeObject.isInverted() != this.isInverted()) then
+                //call PrintMsg("Restore changes for object: " + timeObject.getName())
                 // restore not inverted time line if possible
-                call timeLine.restore.evaluate(time)
+                call timeLine.restore(time)
             elseif (timeObject.isRecordingChanges()) then
-                //call PrintMsg("Record changes for object: " + timeObject.getName())
-                call timeObject.recordChanges.evaluate(time)
+                if (timeObject.shouldStopRecordingChanges()) then
+                    call timeObject.setIsRecordingChanges(false)
+                else
+                    //call PrintMsg("Record changes for object: " + timeObject.getName())
+                    call timeObject.recordChanges(time)
+                endif
             else
-                //call PrintMsg("Neither recording nor restoring object: " + timeObject.getName())
+                //call PrintMsg("Neither record nor restore changes for: " + timeObject.getName())
             endif
             set i = i + 1
         endloop
 
-        call PrintMsg("setTime: " + I2S(this.getTime()) + " with " + I2S(this.getObjectsSize()) + " objects for time instance " + I2S(this))
+        //call PrintMsg("setTime: " + I2S(this.getTime()) + " with " + I2S(this.getObjectsSize()) + " objects for time instance " + I2S(this))
     endmethod
 
     public stub method getTime takes nothing returns integer
@@ -690,10 +727,11 @@ struct TimeImpl extends Time
             set timeObject = this.timeObjects[i]
             set timeLine = timeObject.getTimeLine()
             // flush all changes from now
-            if (this.isInverted() and timeObject.isInverted()) then
-                call timeLine.restore(time)
-            // restore inverted time line if possible
-            elseif (not this.isInverted() and timeObject.isInverted()) then
+            if (this.isInverted() == timeObject.isInverted()) then
+                call timeLine.flushAllFrom(this.getTime())
+            // stop recording changes and restore if possible
+            else
+                call timeObject.setIsRecordingChanges(false)
                 call timeLine.restore(time)
             endif
             set i = i + 1
@@ -701,6 +739,10 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addObject takes TimeObject timeObject returns integer
+        if (this.getObjectsSize() >= thistype.MAX_TIME_OBJECTS) then
+            call PrintMsg("Adding a time object when reached maximum of time objects with " + I2S(this.getObjectsSize()) + " when adding time object " + timeObject.getName())
+        endif
+
         if (timeObject.isInverted()) then
             set this.timeInvertedObjectsSize = this.timeInvertedObjectsSize + 1
         else
@@ -727,7 +769,7 @@ struct TimeImpl extends Time
 
     public static method timerFunction takes nothing returns nothing
         local thistype this = LoadData(GetExpiredTimer())
-        call PrintMsg("Timer function for instance: " + I2S(this))
+        //call PrintMsg("Timer function for instance: " + I2S(this))
 
         if (this.isInverted()) then
             call this.setTime(this.getTime() - 1)
@@ -751,12 +793,12 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addTimeOfDay takes nothing returns nothing
-        call this.addObject(TimeObjectTimeOfDay.create(this.getTime(), false))
+        //call this.addObject(TimeObjectTimeOfDay.create(this.getTime(), false))
     endmethod
 
     public stub method addMusic takes string whichMusic, string whichMusicInverted returns nothing
-        call this.addObject(TimeObjectMusic.create(this.getTime(), false, this, whichMusic, whichMusicInverted))
-        call this.addObject(TimeObjectMusicInverted.create(this.getTime(), true, this, whichMusic, whichMusicInverted))
+        //call this.addObject(TimeObjectMusic.create(this.getTime(), false, this, whichMusic, whichMusicInverted))
+        //call this.addObject(TimeObjectMusicInverted.create(this.getTime(), true, this, whichMusic, whichMusicInverted))
     endmethod
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns nothing
@@ -773,11 +815,29 @@ struct TimeImpl extends Time
         return copy
     endmethod
 
+    // stop recording add hide unit
+    private method addGateUnit takes unit whichUnit returns nothing
+        local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
+        call timeObject.setIsRecordingChanges(false)
+        call timeObject.addChangeEvent(this.getTime() - 1, ChangeEventUnitExists.create(whichUnit))
+        call timeObject.addChangeEvent(this.getTime() - 1, ChangeEventUnitDoesNotExist.create(whichUnit))
+        call ChangeEventUnitExists.invert(whichUnit)
+    endmethod
+
     public stub method redGate takes unit whichUnit, real x, real y, real facing returns boolean
+        local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
         local unit copy = null
+
+        if (timeObject == 0) then
+            return false
+        endif
+
         if (this.isInverted()) then
             return false
         endif
+
+        call this.addGateUnit(whichUnit)
+
         call SetTimeOfDayScalePercentBJ(0.00)
         call this.setInverted(true)
         set copy = this.addUnitCopy(true, whichUnit, x, y, facing)
@@ -786,10 +846,19 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method blueGate takes unit whichUnit, real x, real y, real facing returns boolean
+        local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
         local unit copy = null
+
+        if (timeObject == 0) then
+            return false
+        endif
+
         if (not this.isInverted()) then
             return false
         endif
+
+        call this.addGateUnit(whichUnit)
+
         call SetTimeOfDayScalePercentBJ(100.00)
         call this.setInverted(false)
         set copy = this.addUnitCopy(false, whichUnit, x, y, facing)
