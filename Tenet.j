@@ -301,8 +301,8 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
 endstruct
 
 struct TimeFrameImpl extends TimeFrame
-    private static constant integer MAX_CHANGE_EVENTS = 100
-    private ChangeEvent array changeEvents[100]
+    private static constant integer MAX_CHANGE_EVENTS = 10
+    private ChangeEvent array changeEvents[10]
     private integer changeEventsSize = 0
 
     public stub method getChangeEventsSize takes nothing returns integer
