@@ -25,9 +25,24 @@ vJass implementation: [Tenet.j](./Tenet.j)
 
 Download: [Tenet3.w3x](./Tenet3.w3x)
 
-Two player map with a red and a blue team. The blue team is inverted and goes back a predefined path which it completed before.
-The protagonist has to switch the Algorithm and bring the real Algorithm to a certain point on the map in a certain time.
-There is one red and one blue room on the map to invert units.
-The players have to lure the Zergs away from the Algorithm to switch it.
+The Algorithm has to be switched by the Protagonist and the real one has to be brought to a certain point on the map.
+The Algorithm is protected by Hydralisks.
+
+There are two teams:
+
+* Red team with the Protagonist going forward in time.
+* Blue team coming from the future going backwards to support the red team.
+
+There is one blue and red room on the map. Hence, the time can be inverted at any point in time.
+When the time is inverted, the blue team can gains control again to do something.
+The players have to lure the Hydralisks away from the Algorithm to switch it.
 Hence, the players can go back in time to certain point in time when the Algorithm is not protected and pick it up and drop it somewhere.
 Then the players can go forward and pick it up before it is picked up by the inverted protagonist.
+
+## TODOs
+
+* Maybe limit the number off possible copies or maybe simplify the concept of inversion by not copying someone who goes through the gate?
+* Fix all bugs (see trigger TODO)
+* When a unit goes back before time clock 0, all units and the item should disappear! It is before their existence!
+* Support picking up and dropping an item.
+* The Algorithm should exist once or not?

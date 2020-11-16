@@ -1,4 +1,4 @@
-library Utility
+library Utility requires LinkedList
 
 globals
     hashtable dataHashTable = InitHashtable()
@@ -29,7 +29,7 @@ endlibrary
 library Tenet initializer Init requires Utility
 
 globals
-    constant real TIMER_PERIODIC_INTERVAL = 0.10
+    constant real TIMER_PERIODIC_INTERVAL = 1.0 // 0.10
 endglobals
 
 interface ChangeEvent
@@ -37,7 +37,7 @@ interface ChangeEvent
     public method restore takes nothing returns nothing
 endinterface
 
-interface TimeFrame[10000]
+interface TimeFrame
     public method getChangeEventsSize takes nothing returns integer
     public method addChangeEvent takes ChangeEvent changeEvent returns integer
     public method flush takes nothing returns nothing
@@ -96,15 +96,34 @@ interface Time
     public method addTimeOfDay takes nothing returns nothing
     public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
     public method addUnit takes boolean inverted, unit whichUnit returns nothing
-    public method addUnitCopy takes boolean inverted, unit whichUnit, real x, real y, real facing returns unit
+    public method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
 
 
     // helper methods
-    public method redGate takes unit whichUnit, real x, real y, real facing returns boolean
-    public method blueGate takes unit whichUnit, real x, real y, real facing returns boolean
+    public method redGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
+    public method blueGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
 endinterface
 
-struct ChangeEventTimeOfDay extends ChangeEvent
+struct ChangeEventImpl extends ChangeEvent
+
+    public stub method onChange takes nothing returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+    endmethod
+
+    public method onTraverse takes thistype node returns boolean
+        call PrintMsg("onTraverse node " + I2S(node))
+        call node.restore()
+
+        return false
+    endmethod
+
+    implement ListEx
+
+endstruct
+
+struct ChangeEventTimeOfDay extends ChangeEventImpl
     private real timeOfDay
 
     public method getTimeOfDay takes nothing returns real
@@ -122,7 +141,7 @@ struct ChangeEventTimeOfDay extends ChangeEvent
 
 endstruct
 
-struct ChangeEventMusicTime extends ChangeEvent
+struct ChangeEventMusicTime extends ChangeEventImpl
     private Time whichTime
     private string whichMusic
     private string whichMusicInverted
@@ -147,7 +166,7 @@ struct ChangeEventMusicTime extends ChangeEvent
 
 endstruct
 
-struct ChangeEventMusicTimeInverted extends ChangeEvent
+struct ChangeEventMusicTimeInverted extends ChangeEventImpl
     private Time whichTime
     private string whichMusic
     private string whichMusicInverted
@@ -172,7 +191,7 @@ struct ChangeEventMusicTimeInverted extends ChangeEvent
 
 endstruct
 
-struct ChangeEventUnit extends ChangeEvent
+struct ChangeEventUnit extends ChangeEventImpl
     private unit whichUnit
 
     public method getUnit takes nothing returns unit
@@ -205,6 +224,7 @@ struct ChangeEventUnitPosition extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore unit position for " + GetUnitName(this.getUnit()) + "|r")
         call SetUnitX(getUnit(), this.x)
         call SetUnitY(getUnit(), this.y)
         //call PrintMsg("Restore unit position: " + GetUnitName(this.getUnit()))
@@ -221,6 +241,7 @@ struct ChangeEventUnitFacing extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore unit facing for " + GetUnitName(this.getUnit()) + "|r")
         call SetUnitFacing(this.getUnit(), this.facing)
         //call PrintMsg("Restore unit facing: " + GetUnitName(this.getUnit()))
     endmethod
@@ -235,6 +256,7 @@ struct ChangeEventUnitHp extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore unit life for " + GetUnitName(this.getUnit()) + "|r")
         call SetUnitLifeBJ(this.getUnit(), this.hp)
     endmethod
 
@@ -248,6 +270,7 @@ struct ChangeEventUnitMana extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore unit mana for " + GetUnitName(this.getUnit()) + "|r")
         call SetUnitManaBJ(this.getUnit(), this.mana)
     endmethod
 
@@ -260,6 +283,7 @@ struct ChangeEventUnitDeath extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore unit death for " + GetUnitName(this.getUnit()) + "|r")
         // TODO ressurrect with dummy spell
     endmethod
 
@@ -272,12 +296,13 @@ struct ChangeEventUnitExists extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call thistype.invert(this.getUnit())
+        call PrintMsg("|cff00ff00Hurray: Restore that unit did exist for " + GetUnitName(this.getUnit()) + "|r")
+        call thistype.apply(this.getUnit())
     endmethod
 
-    public static method invert takes unit whichUnit returns nothing
-        call ShowUnitHide(whichUnit)
-        call PauseUnitBJ(true, whichUnit)
+    public static method apply takes unit whichUnit returns nothing
+        call ShowUnitShow(whichUnit)
+        call PauseUnitBJ(false, whichUnit)
     endmethod
 
 endstruct
@@ -289,56 +314,48 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("Restore that unit did not exist for " + GetUnitName(this.getUnit()))
-        call thistype.invert(this.getUnit())
+        call PrintMsg("|cff00ff00Hurray: Restore that unit did not exist for " + GetUnitName(this.getUnit()) + "|r")
+        call thistype.apply(this.getUnit())
     endmethod
 
-    public static method invert takes unit whichUnit returns nothing
-        call ShowUnitShow(whichUnit)
-        call PauseUnitBJ(false, whichUnit)
+    public static method apply takes unit whichUnit returns nothing
+        call ShowUnitHide(whichUnit)
+        call PauseUnitBJ(true, whichUnit)
     endmethod
 
 endstruct
 
 struct TimeFrameImpl extends TimeFrame
-    private static constant integer MAX_CHANGE_EVENTS = 10
-    private ChangeEvent array changeEvents[10]
-    private integer changeEventsSize = 0
+    private ChangeEventImpl changeEventsHead = 0
 
     public stub method getChangeEventsSize takes nothing returns integer
-        return this.changeEventsSize
+        return this.changeEventsHead.getSize()
     endmethod
 
     public stub method addChangeEvent takes ChangeEvent changeEvent returns integer
-        if (this.getChangeEventsSize() >= thistype.MAX_CHANGE_EVENTS) then
-            call PrintMsg("Adding a change event when reached maximum of events with " + I2S(this.getChangeEventsSize()))
+        if (this.changeEventsHead == 0) then
+            set this.changeEventsHead = changeEvent
+            call this.changeEventsHead.makeHead(changeEvent)
+        else
+            call this.changeEventsHead.pushBack(changeEvent)
         endif
 
-        set this.changeEvents[this.changeEventsSize] = changeEvent
-        set this.changeEventsSize = this.changeEventsSize + 1
-
-        return this.changeEventsSize - 1
+        return this.getChangeEventsSize() - 1
     endmethod
 
     public stub method flush takes nothing returns nothing
-        local integer i = 0
         loop
-            exitwhen (i == this.changeEventsSize)
-            call this.changeEvents[i].destroy()
-            set this.changeEvents[i] = 0
-            set i = i + 1
+            exitwhen (this.getChangeEventsSize() == 0)
+            call this.changeEventsHead.popBack().destroy()
         endloop
-        set this.changeEventsSize = 0
+        call this.changeEventsHead.clear()
+        call this.changeEventsHead.destroy()
+        set this.changeEventsHead = 0
     endmethod
 
     public stub method restore takes nothing returns nothing
-        local integer i = this.changeEventsSize - 1
-        call PrintMsg("Restore events: " + I2S(this.changeEventsSize))
-        loop
-            exitwhen (i < 0)
-            call this.changeEvents[i].restore()
-            set i = i - 1
-        endloop
+        call PrintMsg("Restore events with size: " + I2S(this.changeEventsHead.getSize()))
+        call this.changeEventsHead.traverseBackwards()
     endmethod
 
     public static method create takes nothing returns thistype
@@ -482,7 +499,7 @@ struct TimeObjectImpl extends TimeObject
             set currentlyRecordingChanges = "yes"
         endif
 
-        return " at start time " + I2S(this.startTime) + " and inverted " + inverted + " currently recording changes " + currentlyRecordingChanges
+        return " at start time " + I2S(this.startTime) + " and inverted " + inverted + " currently recording changes " + currentlyRecordingChanges + " instance " + I2S(this)
     endmethod
 
     public stub method getStartTime takes nothing returns integer
@@ -804,66 +821,110 @@ struct TimeImpl extends Time
     public stub method addUnit takes boolean inverted, unit whichUnit returns nothing
         local integer index = this.addObject(TimeObjectUnit.create(whichUnit, this.getTime(), inverted))
         // adding these two change events will lead to hiding and pausing the unit before it existed
-        call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitDoesNotExist.create(whichUnit))
         call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitExists.create(whichUnit))
+        call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitDoesNotExist.create(whichUnit))
     endmethod
 
-    public stub method addUnitCopy takes boolean inverted, unit whichUnit, real x, real y, real facing returns unit
-        local unit copy = CreateUnit(GetOwningPlayer(whichUnit), GetUnitTypeId(whichUnit), x, y, facing)
+    public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
+        local unit copy = CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing)
+        local integer i = 0
+        loop
+            exitwhen (i == GetPlayers())
+            if (GetPlayerAlliance(Player(i), owner, ALLIANCE_SHARED_ADVANCED_CONTROL) or Player(i) == owner) then
+                call SelectUnitForPlayerSingle(copy, Player(i))
+            endif
+            set i = i + 1
+        endloop
+
         call this.addObject(TimeObjectUnit.create(copy, this.getTime(), inverted))
 
         return copy
     endmethod
 
-    // stop recording add hide unit
-    private method addGateUnit takes unit whichUnit returns nothing
-        local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
-        call timeObject.setIsRecordingChanges(false)
-        call timeObject.addChangeEvent(this.getTime() - 1, ChangeEventUnitExists.create(whichUnit))
-        call timeObject.addChangeEvent(this.getTime() - 1, ChangeEventUnitDoesNotExist.create(whichUnit))
-        call ChangeEventUnitExists.invert(whichUnit)
+    private method addGroupCopies takes boolean inverted, player owner, group whichGroup, real x, real y, real facing returns nothing
+        local unit first = FirstOfGroup(whichGroup)
+        loop
+            exitwhen (first == null)
+            call this.addUnitCopy(inverted, owner, first, x, y, facing)
+            call GroupRemoveUnit(whichGroup, first)
+            set first = FirstOfGroup(whichGroup)
+        endloop
     endmethod
 
-    public stub method redGate takes unit whichUnit, real x, real y, real facing returns boolean
+    // stop recording add hide unit
+    private method addGateUnit takes unit whichUnit returns boolean
         local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
-        local unit copy = null
+        if (timeObject != 0) then
+            call timeObject.setIsRecordingChanges(false)
+            if (timeObject.isInverted()) then
+                call timeObject.addChangeEvent(this.getTime() + 2, ChangeEventUnitExists.create(whichUnit))
+                call timeObject.addChangeEvent(this.getTime() + 1, ChangeEventUnitDoesNotExist.create(whichUnit))
+            else
+                call timeObject.addChangeEvent(this.getTime() - 2, ChangeEventUnitExists.create(whichUnit))
+                call timeObject.addChangeEvent(this.getTime() - 1, ChangeEventUnitDoesNotExist.create(whichUnit))
+            endif
+            call ChangeEventUnitDoesNotExist.apply(whichUnit)
 
-        if (timeObject == 0) then
-            return false
+            return true
         endif
+
+        return false
+    endmethod
+
+    private method addGateGroup takes group whichGroup returns group
+        local group result = CreateGroup()
+        local unit first = FirstOfGroup(whichGroup)
+        loop
+            exitwhen (first == null)
+            call this.addGateUnit(first)
+            call GroupAddUnit(result, first)
+            call GroupRemoveUnit(whichGroup, first)
+            set first = FirstOfGroup(whichGroup)
+        endloop
+
+        return result
+    endmethod
+
+    public stub method redGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
+        local group gateGroup = null
 
         if (this.isInverted()) then
             return false
         endif
 
-        call this.addGateUnit(whichUnit)
+        set gateGroup = this.addGateGroup(whichGroup)
 
-        call SetTimeOfDayScalePercentBJ(0.00)
-        call this.setInverted(true)
-        set copy = this.addUnitCopy(true, whichUnit, x, y, facing)
-        call SelectUnitForPlayerSingle(copy, GetOwningPlayer(copy))
-        return true
+        if (FirstOfGroup(gateGroup) != null) then
+            call SetTimeOfDayScalePercentBJ(0.00)
+            call this.setInverted(true)
+
+            call this.addGroupCopies(true, owner, gateGroup, x, y, facing)
+
+            return true
+        endif
+
+        return false
     endmethod
 
-    public stub method blueGate takes unit whichUnit, real x, real y, real facing returns boolean
-        local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
-        local unit copy = null
-
-        if (timeObject == 0) then
-            return false
-        endif
+    public stub method blueGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
+        local group gateGroup = null
 
         if (not this.isInverted()) then
             return false
         endif
 
-        call this.addGateUnit(whichUnit)
+        set gateGroup = this.addGateGroup(whichGroup)
 
-        call SetTimeOfDayScalePercentBJ(100.00)
-        call this.setInverted(false)
-        set copy = this.addUnitCopy(false, whichUnit, x, y, facing)
-        call SelectUnitForPlayerSingle(copy, GetOwningPlayer(copy))
-        return true
+        if (FirstOfGroup(gateGroup) != null) then
+            call SetTimeOfDayScalePercentBJ(100.00)
+            call this.setInverted(false)
+
+            call this.addGroupCopies(false, owner, gateGroup, x, y, facing)
+
+            return true
+        endif
+
+        return false
     endmethod
 
     public static method create takes nothing returns thistype
@@ -889,5 +950,557 @@ endglobals
 function Init takes nothing returns nothing
     set globalTime = TimeImpl.create()
 endfunction
+
+endlibrary
+
+library LinkedList /* v1.3.0 https://www.hiveworkshop.com/threads/linkedlist-modules.325635/
+
+
+    */uses /*
+
+    */optional ErrorMessage /*  https://github.com/nestharus/JASS/blob/master/jass/Systems/ErrorMessage/main.j
+
+
+    *///! novjass
+
+    /*
+        Author:
+            - AGD
+        Credits:
+            - Nestharus, Dirac, Bribe
+                > For their scripts and discussions which I used as reference
+
+        Pros:
+            - Feature-rich (Can be)
+            - Modular
+            - Safety-oriented (On DEBUG_MODE, but not 100% fool-proof ofcourse)
+            - Flexible (Does not enforce a built-in allocator - allows user to choose between a custom Alloc
+              or the default vjass allocator, or neither)
+            - Extensible (Provides interfaces)
+
+        Note:
+            If you are using using Dirac's 'LinkedListModule' library, you need to replace its contents with
+            the compatibility lib provided alongside this library for all to work seamlessly.
+
+    */
+    |-----|
+    | API |
+    |-----|
+    /*
+    Note: All the fields except from 'prev' and 'next' are actually operators, so you might want to
+          avoid using them from the interface methods that would be declared above them.
+    =====================================================================================================
+    List Fields Modules (For those who want to write or inline the core linked-list operations themselves)
+
+      */module LinkedListFields/*
+
+          */readonly thistype prev/*
+          */readonly thistype next/*
+
+
+      */module StaticListFields extends LinkedListFields/*
+
+          */readonly static constant thistype sentinel/*
+          */readonly static thistype front/*
+          */readonly static thistype back/*
+          */readonly static boolean empty/*
+
+
+      */module ListFields extends LinkedListFields/*
+
+          */readonly thistype front/*
+          */readonly thistype back/*
+          */readonly boolean empty/*
+
+    =====================================================================================================
+
+    Lite List Modules (Should be enough for most cases)
+
+      */module LinkedListLite extends LinkedListFields/*
+
+          */optional interface static method onInsert takes thistype node returns nothing/*
+          */optional interface static method onRemove takes thistype node returns nothing/*
+          */optional interface method onTraverse takes thistype node returns boolean/*
+
+          */static method insert takes thistype prev, thistype node returns nothing/*
+          */static method remove takes thistype node returns nothing/*
+
+          */method traverseForwards takes nothing returns nothing/*
+          */method traverseBackwards takes nothing returns nothing/*
+                - Only present if onTraverse() is also present
+
+
+      */module StaticListLite extends StaticListFields, LinkedListLite/*
+
+          */static method pushFront takes thistype node returns nothing/*
+          */static method popFront takes nothing returns thistype/*
+
+          */static method pushBack takes thistype node returns nothing/*
+          */static method popBack takes nothing returns thistype/*
+
+
+      */module ListLite extends ListFields, LinkedListLite/*
+
+          */method pushFront takes thistype node returns nothing/*
+          */method popFront takes nothing returns thistype/*
+
+          */method pushBack takes thistype node returns nothing/*
+          */method popBack takes nothing returns thistype/*
+
+
+      */module InstantiatedListLite extends ListLite/*
+
+          */interface static method allocate takes nothing returns thistype/*
+          */interface method deallocate takes nothing returns nothing/*
+          */optional interface method onConstruct takes nothing returns nothing/*
+          */optional interface method onDestruct takes nothing returns nothing/*
+
+          */static method create takes nothing returns thistype/*
+          */method destroy takes nothing returns nothing/*
+
+    =====================================================================================================
+    Standard List Modules
+
+      */module LinkedList extends LinkedListLite/*
+
+          */static method isLinked takes thistype node returns boolean/*
+
+
+      */module StaticList extends StaticListLite, LinkedList/*
+
+          */static method clear takes nothing returns nothing/*
+          */static method flush takes nothing returns nothing/*
+
+
+      */module List extends ListLite, LinkedList/*
+
+          */static method makeHead takes thistype node returns nothing/*
+          */method clear takes nothing returns nothing/*
+          */method flush takes nothing returns nothing/*
+
+
+      */module InstantiatedList extends InstantiatedListLite, List/*
+
+    =====================================================================================================
+    Feature-rich List Modules (For those who somehow need exotic linked-list operations)
+
+      */module LinkedListEx extends LinkedList/*
+
+          */static method move takes thistype prev, thistype node returns nothing/*
+          */static method swap takes thistype nodeA, thistype nodeB returns nothing/*
+
+
+      */module StaticListEx extends StaticList, LinkedListEx/*
+
+          */static method contains takes thistype node returns boolean/*
+          */static method getSize takes nothing returns integer/*
+          */static method rotateLeft takes nothing returns nothing/*
+          */static method rotateRight takes nothing returns nothing/*
+
+
+      */module ListEx extends List, LinkedListEx/*
+
+          */method contains takes thistype node returns boolean/*
+          */method getSize takes nothing returns integer/*
+          */method rotateLeft takes nothing returns nothing/*
+          */method rotateRight takes nothing returns nothing/*
+
+
+      */module InstantiatedListEx extends InstantiatedList, ListEx/*
+
+
+    *///! endnovjass
+
+    /*========================================= CONFIGURATION ===========================================
+    *   Only affects DEBUG_MODE
+    *   If false, throws warnings instead (Errors pauses the game (Or stops the thread) while warnings do not)
+    */
+    globals
+        private constant boolean THROW_ERRORS = true
+    endglobals
+    /*====================================== END OF CONFIGURATION =====================================*/
+
+    static if DEBUG_MODE then
+        public function AssertError takes boolean condition, string methodName, string structName, integer node, string message returns nothing
+            static if LIBRARY_ErrorMessage then
+                static if THROW_ERRORS then
+                    call ThrowError(condition, SCOPE_PREFIX, methodName, structName, node, message)
+                else
+                    call ThrowWarning(condition, SCOPE_PREFIX, methodName, structName, node, message)
+                endif
+            else
+                if condition then
+                    static if THROW_ERRORS then
+                        call BJDebugMsg("|cffff0000[ERROR]|r [Library: " + SCOPE_PREFIX + "] [Struct: " + structName + "] [Method: " + methodName + "] [Instance: " + I2S(node) + "] : |cffff0000" + message + "|r")
+                        call PauseGame(true)
+                    else
+                        call BJDebugMsg("|cffffcc00[WARNING]|r [Library: " + SCOPE_PREFIX + "] [Struct: " + structName + "] [Method: " + methodName + "] [Instance: " + I2S(node) + "] : |cffffcc00" + message + "|r")
+                    endif
+                endif
+            endif
+        endfunction
+    endif
+
+    private module LinkedListUtils
+        method p_clear takes nothing returns nothing
+            set this.next.prev = 0
+            set this.prev.next = 0
+            set this.prev = this
+            set this.next = this
+        endmethod
+        method p_flush takes nothing returns nothing
+            local thistype node = this.prev
+            loop
+                exitwhen node == this
+                call remove(node)
+                set node = node.prev
+            endloop
+        endmethod
+    endmodule
+    private module LinkedListUtilsEx
+        implement LinkedListUtils
+        method p_contains takes thistype toFind returns boolean
+            local thistype node = this.next
+            loop
+                exitwhen node == this
+                if node == toFind then
+                    return true
+                endif
+                set node = node.next
+            endloop
+            return false
+        endmethod
+        method p_getSize takes nothing returns integer
+            local integer count = 0
+            local thistype node = this.next
+            loop
+                exitwhen node == this
+                set count = count + 1
+                set node = node.next
+            endloop
+            return count
+        endmethod
+    endmodule
+
+    private module LinkedListLiteBase
+        implement LinkedListFields
+        debug method p_isEmptyHead takes nothing returns boolean
+            debug return this == this.next and this == this.prev
+        debug endmethod
+        static method p_insert takes thistype this, thistype node returns nothing
+            local thistype next = this.next
+            set node.prev = this
+            set node.next = next
+            set next.prev = node
+            set this.next = node
+        endmethod
+        static method p_remove takes thistype node returns nothing
+            set node.next.prev = node.prev
+            set node.prev.next = node.next
+        endmethod
+        static method insert takes thistype this, thistype node returns nothing
+            debug call AssertError(node == 0, "insert()", "thistype", 0, "Cannot insert null node")
+            debug call AssertError(not node.p_isEmptyHead() and (node.next.prev == node or node.prev.next == node), "insert()", "thistype", 0, "Already linked node [" + I2S(node) + "]: prev = " + I2S(node.prev) + " ; next = " + I2S(node.next))
+            call p_insert(this, node)
+            static if thistype.onInsert.exists then
+                call onInsert(node)
+            endif
+        endmethod
+        static method remove takes thistype node returns nothing
+            debug call AssertError(node == 0, "remove()", "thistype", 0, "Cannot remove null node")
+            debug call AssertError(node.next.prev != node and node.prev.next != node, "remove()", "thistype", 0, "Invalid node [" + I2S(node) + "]")
+            static if thistype.onRemove.exists then
+                call onRemove(node)
+            endif
+            call p_remove(node)
+        endmethod
+        static if thistype.onTraverse.exists then
+            method p_traverse takes boolean forward returns nothing
+                local thistype node
+                local thistype next
+                debug local thistype prev
+                debug local boolean array traversed
+                if forward then
+                    set node = this.next
+                    loop
+                        exitwhen node == this or node.prev.next != node
+                        debug call AssertError(traversed[node], "traverseForwards()", "thistype", this, "A node was traversed twice in a single traversal")
+                        debug set traversed[node] = true
+                        debug set prev = node.prev
+                        set next = node.next
+                        if this.onTraverse(node) then
+                            call remove(node)
+                            debug set traversed[node] = false
+                        debug elseif next.prev == prev then
+                            debug set traversed[node] = false
+                        endif
+                        set node = next
+                    endloop
+                else
+                    set node = this.prev
+                    loop
+                        exitwhen node == this or node.next.prev != node
+                        debug call AssertError(traversed[node], "traverseBackwards()", "thistype", this, "A node was traversed twice in a single traversal")
+                        debug set traversed[node] = true
+                        debug set prev = node.next
+                        set next = node.prev
+                        if this.onTraverse(node) then
+                            call remove(node)
+                            debug set traversed[node] = false
+                        debug elseif next.prev == prev then
+                            debug set traversed[node] = false
+                        endif
+                        set node = next
+                    endloop
+                endif
+            endmethod
+            method traverseForwards takes nothing returns nothing
+                call this.p_traverse(true)
+            endmethod
+            method traverseBackwards takes nothing returns nothing
+                call this.p_traverse(false)
+            endmethod
+        endif
+    endmodule
+    private module LinkedListBase
+        implement LinkedListLiteBase
+        static method isLinked takes thistype node returns boolean
+            return node.next.prev == node or node.prev.next == node
+        endmethod
+    endmodule
+
+    module LinkedListFields
+        readonly thistype prev
+        readonly thistype next
+    endmodule
+    module LinkedListLite
+        implement LinkedListLiteBase
+        implement optional LinkedListLiteModuleCompatibility // For API compatibility with Dirac's 'LinkedListModule' library
+    endmodule
+    module LinkedList
+        implement LinkedListBase
+        implement optional LinkedListModuleCompatibility // For API compatibility with Dirac's 'LinkedListModule' library
+    endmodule
+    module LinkedListEx
+        implement LinkedListBase
+        static method p_move takes thistype prev, thistype node returns nothing
+            call p_remove(node)
+            call p_insert(prev, node)
+        endmethod
+        static method move takes thistype prev, thistype node returns nothing
+            debug call AssertError(not isLinked(node), "move()", "thistype", 0, "Cannot use unlinked node [" + I2S(node) + "]")
+            call p_move(prev, node)
+        endmethod
+        static method swap takes thistype this, thistype node returns nothing
+            local thistype thisPrev = this.prev
+            local thistype thisNext = this.next
+            debug call AssertError(this == 0, "swap()", "thistype", 0, "Cannot swap null node")
+            debug call AssertError(node == 0, "swap()", "thistype", 0, "Cannot swap null node")
+            debug call AssertError(not isLinked(this), "swap()", "thistype", 0, "Cannot use unlinked node [" + I2S(this) + "]")
+            debug call AssertError(not isLinked(node), "swap()", "thistype", 0, "Cannot use unlinked node [" + I2S(node) + "]")
+            call p_move(node, this)
+            if thisNext != node then
+                call p_move(thisPrev, node)
+            endif
+        endmethod
+    endmodule
+
+    module StaticListFields
+        implement LinkedListFields
+        static constant method operator head takes nothing returns thistype
+            return 0
+        endmethod
+        static method operator back takes nothing returns thistype
+            return head.prev
+        endmethod
+        static method operator front takes nothing returns thistype
+            return head.next
+        endmethod
+        static method operator empty takes nothing returns boolean
+            return front == head
+        endmethod
+    endmodule
+    module StaticListLite
+        implement StaticListFields
+        implement LinkedListLiteBase
+        static method pushFront takes thistype node returns nothing
+            debug call AssertError(node == 0, "pushFront()", "thistype", 0, "Cannot use null node")
+            debug call AssertError(not node.p_isEmptyHead() and (node.next.prev == node or node.prev.next == node), "pushFront()", "thistype", 0, "Already linked node [" + I2S(node) + "]: prev = " + I2S(node.prev) + " ; next = " + I2S(node.next))
+            call insert(head, node)
+        endmethod
+        static method popFront takes nothing returns thistype
+            local thistype node = front
+            debug call AssertError(node.prev != head, "popFront()", "thistype", 0, "Invalid list")
+            call remove(node)
+            return node
+        endmethod
+        static method pushBack takes thistype node returns nothing
+            debug call AssertError(node == 0, "pushBack()", "thistype", 0, "Cannot use null node")
+            debug call AssertError(not node.p_isEmptyHead() and (node.next.prev == node or node.prev.next == node), "pushBack()", "thistype", 0, "Already linked node [" + I2S(node) + "]: prev = " + I2S(node.prev) + " ; next = " + I2S(node.next))
+            call insert(back, node)
+        endmethod
+        static method popBack takes nothing returns thistype
+            local thistype node = back
+            debug call AssertError(node.next != head, "popBack()", "thistype", 0, "Invalid list")
+            call remove(node)
+            return node
+        endmethod
+    endmodule
+    module StaticList
+        implement StaticListLite
+        implement LinkedListBase
+        implement LinkedListUtils
+        static method clear takes nothing returns nothing
+            call head.p_clear()
+        endmethod
+        static method flush takes nothing returns nothing
+            call head.p_flush()
+        endmethod
+    endmodule
+    module StaticListEx
+        implement StaticList
+        implement LinkedListEx
+        implement LinkedListUtilsEx
+        static method contains takes thistype node returns boolean
+            return head.p_contains(node)
+        endmethod
+        static method getSize takes nothing returns integer
+            return head.p_getSize()
+        endmethod
+        static method rotateLeft takes nothing returns nothing
+            call p_move(back, front)
+        endmethod
+        static method rotateRight takes nothing returns nothing
+            call p_move(head, back)
+        endmethod
+    endmodule
+
+    module ListFields
+        implement LinkedListFields
+        method operator back takes nothing returns thistype
+            return this.prev
+        endmethod
+        method operator front takes nothing returns thistype
+            return this.next
+        endmethod
+        method operator empty takes nothing returns boolean
+            return this.next == this
+        endmethod
+    endmodule
+    module ListLite
+        implement ListFields
+        implement LinkedListLiteBase
+        method pushFront takes thistype node returns nothing
+            debug call AssertError(this == 0, "pushFront()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "pushFront()", "thistype", this, "Invalid list")
+            debug call AssertError(node == 0, "pushFront()", "thistype", this, "Cannot insert null node")
+            debug call AssertError(not node.p_isEmptyHead() and (node.next.prev == node or node.prev.next == node), "pushFront()", "thistype", this, "Already linked node [" + I2S(node) + "]: prev = " + I2S(node.prev) + " ; next = " + I2S(node.next))
+            call insert(this, node)
+        endmethod
+        method popFront takes nothing returns thistype
+            local thistype node = this.next
+            debug call AssertError(this == 0, "popFront()", "thistype", 0, "Null list")
+            debug call AssertError(node.prev != this, "popFront()", "thistype", this, "Invalid list")
+            call remove(node)
+            return node
+        endmethod
+        method pushBack takes thistype node returns nothing
+            debug call AssertError(this == 0, "pushBack()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "pushBack()", "thistype", this, "Invalid list")
+            debug call AssertError(node == 0, "pushBack()", "thistype", this, "Cannot insert null node")
+            debug call AssertError(not node.p_isEmptyHead() and (node.next.prev == node or node.prev.next == node), "pushBack()", "thistype", this, "Already linked node [" + I2S(node) + "]: prev = " + I2S(node.prev) + " ; next = " + I2S(node.next))
+            call insert(this.prev, node)
+        endmethod
+        method popBack takes nothing returns thistype
+            local thistype node = this.prev
+            debug call AssertError(this == 0, "popBack()", "thistype", 0, "Null list")
+            debug call AssertError(node.next != this, "pushFront()", "thistype", this, "Invalid list")
+            call remove(node)
+            return node
+        endmethod
+    endmodule
+    module List
+        implement ListLite
+        implement LinkedListBase
+        implement LinkedListUtils
+        static method makeHead takes thistype node returns nothing
+            set node.prev = node
+            set node.next = node
+        endmethod
+        method clear takes nothing returns nothing
+            debug call AssertError(this == 0, "clear()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "clear()", "thistype", this, "Invalid list")
+            call this.p_clear()
+        endmethod
+        method flush takes nothing returns nothing
+            debug call AssertError(this == 0, "flush()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "flush()", "thistype", this, "Invalid list")
+            call this.p_flush()
+        endmethod
+    endmodule
+    module ListEx
+        implement List
+        implement LinkedListEx
+        implement LinkedListUtilsEx
+        method contains takes thistype node returns boolean
+            debug call AssertError(this == 0, "contains()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "contains()", "thistype", this, "Invalid list")
+            return this.p_contains(node)
+        endmethod
+        method getSize takes nothing returns integer
+            debug call AssertError(this == 0, "getSize()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "getSize()", "thistype", this, "Invalid list")
+            return this.p_getSize()
+        endmethod
+        method rotateLeft takes nothing returns nothing
+            debug call AssertError(this == 0, "rotateLeft()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "rotateLeft()", "thistype", this, "Invalid list")
+            call p_move(this.back, this.front)
+        endmethod
+        method rotateRight takes nothing returns nothing
+            debug call AssertError(this == 0, "rotateRight()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev == this, "rotateRight()", "thistype", this, "Invalid list")
+            call p_move(this, this.back)
+        endmethod
+    endmodule
+
+    module InstantiatedListLite
+        implement ListLite
+        debug private boolean valid
+        static method create takes nothing returns thistype
+            local thistype node = allocate()
+            set node.prev = node
+            set node.next = node
+            debug set node.valid = true
+            static if thistype.onConstruct.exists then
+                call node.onConstruct()
+            endif
+            return node
+        endmethod
+        method destroy takes nothing returns nothing
+            debug call AssertError(this == 0, "destroy()", "thistype", 0, "Null list")
+            debug call AssertError(this.next.prev != this, "destroy()", "thistype", this, "Invalid list")
+            debug call AssertError(not this.valid, "destroy()", "thistype", this, "Double-free")
+            debug set this.valid = false
+            static if thistype.flush.exists then
+                call this.flush()
+            endif
+            static if thistype.onDestruct.exists then
+                call this.onDestruct()
+            endif
+            debug set this.prev = 0
+            debug set this.next = 0
+            call this.deallocate()
+        endmethod
+    endmodule
+    module InstantiatedList
+        implement List
+        implement InstantiatedListLite
+    endmodule
+    module InstantiatedListEx
+        implement ListEx
+        implement InstantiatedList
+    endmodule
+
 
 endlibrary
