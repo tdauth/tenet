@@ -29,7 +29,7 @@ endlibrary
 library Tenet initializer Init requires Utility
 
 globals
-    constant real TIMER_PERIODIC_INTERVAL = 1.0 // 0.10
+    constant real TIMER_PERIODIC_INTERVAL = 0.10
 endglobals
 
 interface ChangeEvent
@@ -93,13 +93,28 @@ interface Time
     public method pause takes nothing returns nothing
     public method resume takes nothing returns nothing
 
+    /**
+     * After calling this method, the time of day will be stored and inverted as well when the global time is inverted.
+     */
     public method addTimeOfDay takes nothing returns nothing
     public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
     public method addUnit takes boolean inverted, unit whichUnit returns nothing
+    public method addItem takes boolean inverted, item whichItem returns nothing
     public method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
 
 
     // helper methods
+
+    /**
+     * Inverts a group of units by adding inverted copies of them for the given owner at the given position with the given facing.
+     * Only works for units with an attached time object.
+     * This will invert the global time if it successfully inverts at least one unit from the group.
+     * \param owner The new owner of the copied inverted units.
+     * \param x
+     * \param y
+     * \param facing
+     * \return Returns true if at least one unit was inverted and hence the global time was inverted.
+     */
     public method redGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
     public method blueGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
 endinterface
@@ -276,6 +291,33 @@ struct ChangeEventUnitMana extends ChangeEventUnit
 
 endstruct
 
+struct ChangeEventUnitPickupItem extends ChangeEventUnit
+    private item whichItem
+    private real x
+    private real y
+
+    public stub method onChange takes nothing returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        // TODO Drop item at x/y
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitUseItem extends ChangeEventUnit
+    private integer slot
+    private integer itemTypeId
+
+    public stub method onChange takes nothing returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        // TODO Restore the item type charge of one at the slot.
+    endmethod
+
+endstruct
+
 struct ChangeEventUnitDeath extends ChangeEventUnit
 
     public stub method onChange takes nothing returns nothing
@@ -325,10 +367,68 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
 
 endstruct
 
+struct ChangeEventItem extends ChangeEventImpl
+    private item whichItem
+
+    public method getItem takes nothing returns item
+        return this.whichItem
+    endmethod
+
+    public stub method onChange takes nothing returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+    endmethod
+
+    public static method create takes item whichItem returns thistype
+        local thistype this = thistype.allocate()
+        set this.whichItem = whichItem
+
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventItemExists extends ChangeEventItem
+
+    public stub method onChange takes nothing returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore that item did exist for " + GetItemName(this.getItem()) + "|r")
+        call thistype.apply(this.getItem())
+    endmethod
+
+    public static method apply takes item whichItem returns nothing
+        call SetItemVisible(whichItem, true)
+    endmethod
+
+endstruct
+
+struct ChangeEventItemDoesNotExist extends ChangeEventItem
+
+    public stub method onChange takes nothing returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore that item did not exist for " + GetItemName(this.getItem()) + "|r")
+        call thistype.apply(this.getItem())
+    endmethod
+
+    public static method apply takes item whichItem returns nothing
+        call SetItemVisible(whichItem, false)
+    endmethod
+
+endstruct
+
 struct TimeFrameImpl extends TimeFrame
     private ChangeEventImpl changeEventsHead = 0
 
     public stub method getChangeEventsSize takes nothing returns integer
+        if (this.changeEventsHead == 0) then
+            return 0
+        endif
+
         return this.changeEventsHead.getSize()
     endmethod
 
@@ -354,8 +454,14 @@ struct TimeFrameImpl extends TimeFrame
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("Restore events with size: " + I2S(this.changeEventsHead.getSize()))
-        call this.changeEventsHead.traverseBackwards()
+        if (this.changeEventsHead != 0) then
+            call PrintMsg("Restore events with size: " + I2S(this.changeEventsHead.getSize()))
+            // The head element is excluded from traverseBackwards
+            call this.changeEventsHead.onTraverse(this.changeEventsHead)
+            call this.changeEventsHead.traverseBackwards()
+        else
+            call PrintMsg("Restore events with size: 0")
+        endif
     endmethod
 
     public static method create takes nothing returns thistype
@@ -684,9 +790,36 @@ struct TimeObjectUnit extends TimeObjectImpl
 
 endstruct
 
+struct TimeObjectItem extends TimeObjectImpl
+    private item whichItem
+
+    public stub method getName takes nothing returns string
+        return GetItemName(this.whichItem) + super.getName()
+    endmethod
+
+    public static method create takes item whichItem, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichItem = whichItem
+
+        call SaveData(this.whichItem, this)
+
+        return this
+    endmethod
+
+    public method onDestroy takes nothing returns nothing
+        call FlushData(this.whichItem)
+    endmethod
+
+    public static method fromItem takes item whichItem returns thistype
+        return LoadData(whichItem)
+    endmethod
+
+endstruct
+
 struct TimeImpl extends Time
     private integer time = 0
     private boolean inverted = false
+    // TODO Use ListEx or something to avoid limitations.
     private static constant integer MAX_TIME_OBJECTS = 100
     private TimeObject array timeObjects[100]
     private integer timeObjectsSize = 0
@@ -823,6 +956,13 @@ struct TimeImpl extends Time
         // adding these two change events will lead to hiding and pausing the unit before it existed
         call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitExists.create(whichUnit))
         call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventUnitDoesNotExist.create(whichUnit))
+    endmethod
+
+    public stub method addItem takes boolean inverted, item whichItem returns nothing
+        local integer index = this.addObject(TimeObjectItem.create(whichItem, this.getTime(), inverted))
+        // adding these two change events will lead to hiding the item before it existed
+        call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventItemExists.create(whichItem))
+        call this.timeObjects[index].addChangeEvent(this.getTime(), ChangeEventItemDoesNotExist.create(whichItem))
     endmethod
 
     public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
