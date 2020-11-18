@@ -1,4 +1,4 @@
-library Utility requires LinkedList
+library TenetUtility
 
 globals
     hashtable dataHashTable = InitHashtable()
@@ -34,7 +34,7 @@ endfunction
 
 endlibrary
 
-library Tenet initializer Init requires Utility
+library Tenet initializer Init requires TenetUtility, LinkedList, ReverseAnimation
 
 globals
     constant real TIMER_PERIODIC_INTERVAL = 0.10
@@ -1728,5 +1728,405 @@ library LinkedList /* v1.3.0 https://www.hiveworkshop.com/threads/linkedlist-mod
         implement InstantiatedList
     endmodule
 
+
+endlibrary
+
+library TimerUtils initializer init
+//*********************************************************************
+//* TimerUtils (red+blue+orange flavors for 1.24b+) 2.0
+//* ----------
+//*
+//*  To implement it , create a custom text trigger called TimerUtils
+//* and paste the contents of this script there.
+//*
+//*  To copy from a map to another, copy the trigger holding this
+//* library to your map.
+//*
+//* (requires vJass)   More scripts: htt://www.wc3c.net
+//*
+//* For your timer needs:
+//*  * Attaching
+//*  * Recycling (with double-free protection)
+//*
+//* set t=NewTimer()      : Get a timer (alternative to CreateTimer)
+//* set t=NewTimerEx(x)   : Get a timer (alternative to CreateTimer), call
+//*                            Initialize timer data as x, instead of 0.
+//*
+//* ReleaseTimer(t)       : Relese a timer (alt to DestroyTimer)
+//* SetTimerData(t,2)     : Attach value 2 to timer
+//* GetTimerData(t)       : Get the timer's value.
+//*                         You can assume a timer's value is 0
+//*                         after NewTimer.
+//*
+//* Multi-flavor:
+//*    Set USE_HASH_TABLE to true if you don't want to complicate your life.
+//*
+//* If you like speed and giberish try learning about the other flavors.
+//*
+//********************************************************************
+
+//================================================================
+    globals
+        //How to tweak timer utils:
+        // USE_HASH_TABLE = true  (new blue)
+        //  * SAFEST
+        //  * SLOWEST (though hash tables are kind of fast)
+        //
+        // USE_HASH_TABLE = false, USE_FLEXIBLE_OFFSET = true  (orange)
+        //  * kinda safe (except there is a limit in the number of timers)
+        //  * ALMOST FAST
+        //
+        // USE_HASH_TABLE = false, USE_FLEXIBLE_OFFSET = false (red)
+        //  * THE FASTEST (though is only  faster than the previous method
+        //                  after using the optimizer on the map)
+        //  * THE LEAST SAFE ( you may have to tweak OFSSET manually for it to
+        //                     work)
+        //
+        private constant boolean USE_HASH_TABLE      = true
+        private constant boolean USE_FLEXIBLE_OFFSET = false
+
+        private constant integer OFFSET     = 0x100000
+        private          integer VOFFSET    = OFFSET
+
+        //Timers to preload at map init:
+        private constant integer QUANTITY   = 256
+
+        //Changing this  to something big will allow you to keep recycling
+        // timers even when there are already AN INCREDIBLE AMOUNT of timers in
+        // the stack. But it will make things far slower so that's probably a bad idea...
+        private constant integer ARRAY_SIZE = 8190
+
+    endglobals
+
+    //==================================================================================================
+    globals
+        private integer array data[ARRAY_SIZE]
+        private hashtable     ht
+    endglobals
+
+
+
+    //It is dependent on jasshelper's recent inlining optimization in order to perform correctly.
+    function SetTimerData takes timer t, integer value returns nothing
+        static if(USE_HASH_TABLE) then
+            // new blue
+            call SaveInteger(ht,0,GetHandleId(t), value)
+
+        elseif (USE_FLEXIBLE_OFFSET) then
+            // orange
+            static if (DEBUG_MODE) then
+                if(GetHandleId(t)-VOFFSET<0) then
+                    call BJDebugMsg("SetTimerData: Wrong handle id, only use SetTimerData on timers created by NewTimer")
+                endif
+            endif
+            set data[GetHandleId(t)-VOFFSET]=value
+        else
+            // new red
+            static if (DEBUG_MODE) then
+                if(GetHandleId(t)-OFFSET<0) then
+                    call BJDebugMsg("SetTimerData: Wrong handle id, only use SetTimerData on timers created by NewTimer")
+                endif
+            endif
+            set data[GetHandleId(t)-OFFSET]=value
+        endif
+    endfunction
+
+    function GetTimerData takes timer t returns integer
+        static if(USE_HASH_TABLE) then
+            // new blue
+            return LoadInteger(ht,0,GetHandleId(t) )
+
+        elseif (USE_FLEXIBLE_OFFSET) then
+            // orange
+            static if (DEBUG_MODE) then
+                if(GetHandleId(t)-VOFFSET<0) then
+                    call BJDebugMsg("SetTimerData: Wrong handle id, only use SetTimerData on timers created by NewTimer")
+                endif
+            endif
+            return data[GetHandleId(t)-VOFFSET]
+        else
+            // new red
+            static if (DEBUG_MODE) then
+                if(GetHandleId(t)-OFFSET<0) then
+                    call BJDebugMsg("SetTimerData: Wrong handle id, only use SetTimerData on timers created by NewTimer")
+                endif
+            endif
+            return data[GetHandleId(t)-OFFSET]
+        endif
+    endfunction
+
+    //==========================================================================================
+    globals
+        private timer array tT[ARRAY_SIZE]
+        private integer tN = 0
+        private constant integer HELD=0x28829022
+        //use a totally random number here, the more improbable someone uses it, the better.
+
+        private boolean       didinit = false
+    endglobals
+    private keyword init
+
+    //==========================================================================================
+    // I needed to decide between duplicating code ignoring the "Once and only once" rule
+    // and using the ugly textmacros. I guess textmacros won.
+    //
+    //! textmacro TIMERUTIS_PRIVATE_NewTimerCommon takes VALUE
+    // On second thought, no.
+    //! endtextmacro
+
+    function NewTimerEx takes integer value returns timer
+        if (tN==0) then
+            if (not didinit) then
+                //This extra if shouldn't represent a major performance drawback
+                //because QUANTITY rule is not supposed to be broken every day.
+                call init.evaluate()
+                set tN = tN - 1
+            else
+                //If this happens then the QUANTITY rule has already been broken, try to fix the
+                // issue, else fail.
+                debug call BJDebugMsg("NewTimer: Warning, Exceeding TimerUtils_QUANTITY, make sure all timers are getting recycled correctly")
+                set tT[0]=CreateTimer()
+                static if( not USE_HASH_TABLE) then
+                    debug call BJDebugMsg("In case of errors, please increase it accordingly, or set TimerUtils_USE_HASH_TABLE to true")
+                    static if( USE_FLEXIBLE_OFFSET) then
+                        if (GetHandleId(tT[0])-VOFFSET<0) or (GetHandleId(tT[0])-VOFFSET>=ARRAY_SIZE) then
+                            //all right, couldn't fix it
+                            call BJDebugMsg("NewTimer: Unable to allocate a timer, you should probably set TimerUtils_USE_HASH_TABLE to true or fix timer leaks.")
+                            return null
+                        endif
+                    else
+                        if (GetHandleId(tT[0])-OFFSET<0) or (GetHandleId(tT[0])-OFFSET>=ARRAY_SIZE) then
+                            //all right, couldn't fix it
+                            call BJDebugMsg("NewTimer: Unable to allocate a timer, you should probably set TimerUtils_USE_HASH_TABLE to true or fix timer leaks.")
+                            return null
+                        endif
+                    endif
+                endif
+            endif
+        else
+            set tN=tN-1
+        endif
+        call SetTimerData(tT[tN],value)
+     return tT[tN]
+    endfunction
+
+    function NewTimer takes nothing returns timer
+        return NewTimerEx(0)
+    endfunction
+
+
+    //==========================================================================================
+    function ReleaseTimer takes timer t returns nothing
+        if(t==null) then
+            debug call BJDebugMsg("Warning: attempt to release a null timer")
+            return
+        endif
+        if (tN==ARRAY_SIZE) then
+            debug call BJDebugMsg("Warning: Timer stack is full, destroying timer!!")
+
+            //stack is full, the map already has much more troubles than the chance of bug
+            call DestroyTimer(t)
+        else
+            call PauseTimer(t)
+            if(GetTimerData(t)==HELD) then
+                debug call BJDebugMsg("Warning: ReleaseTimer: Double free!")
+                return
+            endif
+            call SetTimerData(t,HELD)
+            set tT[tN]=t
+            set tN=tN+1
+        endif
+    endfunction
+
+    private function init takes nothing returns nothing
+     local integer i=0
+     local integer o=-1
+     local boolean oops = false
+        if ( didinit ) then
+            return
+        else
+            set didinit = true
+        endif
+
+        static if( USE_HASH_TABLE ) then
+            set ht = InitHashtable()
+            loop
+                exitwhen(i==QUANTITY)
+                set tT[i]=CreateTimer()
+                call SetTimerData(tT[i], HELD)
+                set i=i+1
+            endloop
+            set tN = QUANTITY
+        else
+            loop
+                set i=0
+                loop
+                    exitwhen (i==QUANTITY)
+                    set tT[i] = CreateTimer()
+                    if(i==0) then
+                        set VOFFSET = GetHandleId(tT[i])
+                        static if(USE_FLEXIBLE_OFFSET) then
+                            set o=VOFFSET
+                        else
+                            set o=OFFSET
+                        endif
+                    endif
+                    if (GetHandleId(tT[i])-o>=ARRAY_SIZE) then
+                        exitwhen true
+                    endif
+                    if (GetHandleId(tT[i])-o>=0)  then
+                        set i=i+1
+                    endif
+                endloop
+                set tN = i
+                exitwhen(tN == QUANTITY)
+                set oops = true
+                exitwhen not USE_FLEXIBLE_OFFSET
+                debug call BJDebugMsg("TimerUtils_init: Failed a initialization attempt, will try again")
+            endloop
+
+            if(oops) then
+                static if ( USE_FLEXIBLE_OFFSET) then
+                    debug call BJDebugMsg("The problem has been fixed.")
+                    //If this message doesn't appear then there is so much
+                    //handle id fragmentation that it was impossible to preload
+                    //so many timers and the thread crashed! Therefore this
+                    //debug message is useful.
+                elseif(DEBUG_MODE) then
+                    call BJDebugMsg("There were problems and the new timer limit is "+I2S(i))
+                    call BJDebugMsg("This is a rare ocurrence, if the timer limit is too low:")
+                    call BJDebugMsg("a) Change USE_FLEXIBLE_OFFSET to true (reduces performance a little)")
+                    call BJDebugMsg("b) or try changing OFFSET to "+I2S(VOFFSET) )
+                endif
+            endif
+        endif
+
+    endfunction
+
+endlibrary
+
+library ReverseAnimation requires TimerUtils
+
+   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   //  ReverseAnimation
+   //====================================================================================================================
+   //  Firstly, this script requires TimerUtils (by Vexorian @ [url]www.wc3campaigns.net):[/url]
+   //          [url]http://wc3campaigns.net/showthread.php?t=101322[/url]
+   //
+   //  Background Info:
+   //   [url]http://www.wc3campaigns.net/showpost.php?p=1017121&postcount=88[/url]
+   //
+   //  function SetUnitAnimationReverse takes:
+   //
+   //      unit u - animation of which reverse animation is played;
+   //      integer index - animation index of the animation to be played;
+   //      real animTime - the natural duration of the animation to be played. This can be referred to in the preview
+   //                      window in the bottom-left part of the World Editor interface (it is the real value enclosed
+   //                      in parenthesis);
+   //      real runSpeed - the speed at which the animation to be played in reverse will be ran.
+   //      boolean resetAnim - indicates to the system if it should set the unit's animation to "stand" after playing the
+   //                          reverse animation.
+   //
+   //  function SetUnitAnimationReverseFollowed takes all of the above and:
+   //      FollowUpFunc func - function to be ran after the animation is played. Expressed as a function interface
+   //                          (see below). Takes an data object arguement pertaining to relevant stuff that must be
+   //                          passed.
+   //      integer data - a struct that is the above data object.
+   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII//
+//IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII//
+//  -- Configuration --
+
+   globals
+       private constant real PREP_INTERVAL_DURATION = 0.03
+   endglobals
+
+//IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII//
+//IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII//
+//  -- User Functions --
+
+   private keyword ReverseAnimation
+
+   function SetUnitAnimationReverse takes unit u, integer index, real animTime, real runSpeed, boolean resetAnim returns boolean
+       return ReverseAnimation.Prepare(u, index, animTime, runSpeed, resetAnim, 0, 0)
+   endfunction
+
+   function SetUnitAnimationReverseFollowed takes unit u, integer index, real animTime, real runSpeed, boolean resetAnim, FollowUpFunc func, integer data returns boolean
+       return ReverseAnimation.Prepare(u, index, animTime, runSpeed, resetAnim, func, data)
+   endfunction
+
+//IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII//
+//IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII//
+//  -- Script Operation Functions --
+
+   function interface FollowUpFunc takes integer data returns nothing
+
+   private struct ReverseAnimation
+
+       private unit u
+       private integer intAnimIndex
+       private real rAnimTime
+       private real rRunSpeed
+       private boolean boolResetAnim
+       private FollowUpFunc func
+       private integer data
+
+       public static method Prepare takes unit u, integer index, real animTime, real runSpeed, boolean resetAnim, FollowUpFunc func, integer data returns boolean
+           local ReverseAnimation new = 0
+           local timer TIM = null
+
+           if u != null and index > 0 and runSpeed > 0.00 then
+               set new = .allocate()
+               set new.u = u
+               set new.intAnimIndex = index
+               set new.rAnimTime = animTime
+               set new.rRunSpeed = -runSpeed
+               set new.boolResetAnim = resetAnim
+               set new.func = func
+               set new.data = data
+
+               call SetUnitTimeScale(u, animTime/PREP_INTERVAL_DURATION)
+               call SetUnitAnimationByIndex(u, index)
+               set TIM = NewTimer()
+               call SetTimerData(TIM, integer(new))
+               call TimerStart(TIM, PREP_INTERVAL_DURATION, false, function ReverseAnimation.Play)
+
+               set TIM = null
+               return true
+           endif
+
+           return false
+       endmethod
+
+       public static method Play takes nothing returns nothing
+           local timer TIM = GetExpiredTimer()
+           local ReverseAnimation INST = GetTimerData(TIM)
+
+           call SetUnitTimeScale(INST.u, INST.rRunSpeed)
+           call TimerStart(TIM, INST.rAnimTime/-INST.rRunSpeed, false, function ReverseAnimation.End)
+
+           set TIM = null
+       endmethod
+
+       public static method End takes nothing returns nothing
+           local timer TIM = GetExpiredTimer()
+           local ReverseAnimation INST = GetTimerData(TIM)
+
+           call SetUnitTimeScale(INST.u, 1.00)
+           if INST.boolResetAnim then
+               call SetUnitAnimation(INST.u, "stand")
+           endif
+           if INST.func != 0 then
+               call INST.func.execute(INST.data)
+           endif
+
+           set INST.u = null
+           call INST.destroy()
+           call ReleaseTimer(TIM)
+           set TIM = null
+       endmethod
+
+   endstruct
 
 endlibrary
