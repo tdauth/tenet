@@ -23,26 +23,30 @@ vJass implementation: [Tenet.j](./Tenet.j)
 
 ## Scenario
 
-Download: [Tenet3.w3x](./Tenet3.w3x)
+Download: [Tenet.w3x](./Tenet.w3x)
 
 The Algorithm has to be switched by the Protagonist and the real one has to be brought to a certain point on the map.
-The Algorithm is protected by Hydralisks.
+The Algorithm is protected by Hydralisks (bad guys).
 
-There are two teams:
+Both forces (good and bad guys) are separated into two teams:
 
-* Red team with the Protagonist going forward in time.
-* Blue team coming from the future going backwards to support the red team.
+* Red team: Moves forward through time.
+* Blue team: Moves backwards through time.
 
-There is one blue and red room on the map. Hence, the time can be inverted at any point in time.
+There is one blue and red room on the map.
+Hence, the time can be inverted at any point in time.
 When the time is inverted, the blue team can gains control again to do something.
 The players have to lure the Hydralisks away from the Algorithm to switch it.
 Hence, the players can go back in time to certain point in time when the Algorithm is not protected and pick it up and drop it somewhere.
-Then the players can go forward and pick it up before it is picked up by the inverted protagonist.
+Then the players can go forward and pick it up before it is picked up by the inverted Protagonist.
 
 ## TODOs
 
 * Maybe limit the number off possible copies or maybe simplify the concept of inversion by not copying someone who goes through the gate?
 * Fix all bugs (see trigger TODO)
-* When a unit goes back before time clock 0, all units and the item should disappear! It is before their existence!
 * Support picking up and dropping an item.
-* The Algorithm should exist once or not?
+* The Algorithm should exist once or multiple times?
+* Try to player with 4 players and improve the scenario to improve its structure.
+* Test the tanks and the tank factory on constructing support.
+* Add a hydralisk factory.
+* Add intro video with helicopters bringing and taking the red and the blue team.
