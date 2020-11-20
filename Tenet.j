@@ -1,3 +1,55 @@
+library MapData
+
+    globals
+        constant integer RESURRECT_UNIT_TYPE_ID = 'h003'
+    endglobals
+
+    struct UnitTypes
+
+        public static method getWalkAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+                return 5
+            elseif (unitTypeId == 'z001') then
+                return 2
+            endif
+
+            return 0
+        endmethod
+
+        public static method getAttackAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+                return 2
+            elseif (unitTypeId == 'z001') then
+                return 3
+            endif
+
+            return 0
+        endmethod
+
+        public static method getWalkAnimationDuration takes integer unitTypeId returns real
+            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+                return 0.833
+            elseif (unitTypeId == 'z001') then
+                return 1.0
+            endif
+
+            return 0.0
+        endmethod
+
+        public static method getAttackAnimationDuration takes integer unitTypeId returns real
+            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+                return 0.867
+            elseif (unitTypeId == 'z001') then
+                return 1.0
+            endif
+
+            return 0.0
+        endmethod
+
+    endstruct
+
+endlibrary
+
 library TenetUtility
 
 globals
@@ -34,11 +86,10 @@ endfunction
 
 endlibrary
 
-library Tenet initializer Init requires TenetUtility, LinkedList, ReverseAnimation
+library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation
 
 globals
     constant real TIMER_PERIODIC_INTERVAL = 0.10
-    constant integer RESURRECT_UNIT_TYPE_ID = 'h003'
 endglobals
 
 interface ChangeEvent
@@ -75,6 +126,8 @@ interface TimeObject
     public method getStartTime takes nothing returns integer
     public method isInverted takes nothing returns boolean
     public method getTimeLine takes nothing returns TimeLine
+
+    public method onExists takes integer time returns nothing
 
     public method startRecordingChanges takes integer time returns nothing
     public method stopRecordingChanges takes integer time returns nothing
@@ -273,6 +326,14 @@ struct ChangeEventUnitPosition extends ChangeEventUnit
     private real x
     private real y
 
+    public method setX takes real x returns nothing
+        set this.x = x
+    endmethod
+
+    public method setY takes real y returns nothing
+        set this.y = y
+    endmethod
+
     public stub method onChange takes integer time returns nothing
         set this.x = GetUnitX(this.getUnit())
         set this.y = GetUnitY(this.getUnit())
@@ -290,6 +351,10 @@ endstruct
 
 struct ChangeEventUnitFacing extends ChangeEventUnit
     private real facing
+
+    public method setFacing takes real facing returns nothing
+        set this.facing = facing
+    endmethod
 
     public stub method onChange takes integer time returns nothing
         set this.facing = GetUnitFacing(this.getUnit())
@@ -311,6 +376,7 @@ struct ChangeEventUnitAnimation extends ChangeEventUnit
     private real offset
 
     public stub method onChange takes integer time returns nothing
+        // TODO The animation might have changed after the recording has started!
         set this.offset = I2R(time) * TIMER_PERIODIC_INTERVAL - I2R(this.timeObjectUnit.getRecordingChangesStartTime())
     endmethod
 
@@ -367,7 +433,7 @@ struct ChangeEventUnitPickupItem extends ChangeEventUnit
 
     public stub method restore takes nothing returns nothing
         call UnitRemoveItemSwapped(this.whichItem, this.getUnit())
-        call PrintMsg("|cff00ff00Hurray: Restore unit picking up item for " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore unit picking up item for " + GetUnitName(this.getUnit()) + "|r")
     endmethod
 
     public static method create takes unit whichUnit, item whichItem returns thistype
@@ -386,7 +452,7 @@ struct ChangeEventUnitDropItem extends ChangeEventUnit
 
     public stub method restore takes nothing returns nothing
         call UnitAddItemSwapped(this.whichItem, this.getUnit())
-        call PrintMsg("|cff00ff00Hurray: Restore unit dropping item up for " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore unit dropping item up for " + GetUnitName(this.getUnit()) + "|r")
     endmethod
 
     public static method create takes unit whichUnit, item whichItem returns thistype
@@ -420,7 +486,7 @@ struct ChangeEventUnitTakesDamage extends ChangeEventUnit
 
     public stub method restore takes nothing returns nothing
         call SetUnitLifeBJ(this.getUnit(), GetUnitStateSwap(UNIT_STATE_LIFE, this.getUnit()) + this.damage)
-        call PrintMsg("|cff00ff00Hurray: Restore unit damage " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore unit damage " + GetUnitName(this.getUnit()) + "|r")
     endmethod
 
     public static method create takes unit target, unit source, real damage, attacktype attackType, damagetype damageType returns thistype
@@ -486,11 +552,12 @@ endstruct
 struct ChangeEventUnitExists extends ChangeEventUnit
 
     public stub method onChange takes integer time returns nothing
-        //call KillUnit(this.getUnit())
+        //call PrintMsg("|cff00ff00Hurray: Restore that unit did exist (correct time direction) for " + GetUnitName(this.getUnit()) + "|r")
+        call thistype.apply(this.getUnit())
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("|cff00ff00Hurray: Restore that unit did exist for " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore that unit did exist for " + GetUnitName(this.getUnit()) + "|r")
         call thistype.apply(this.getUnit())
     endmethod
 
@@ -508,7 +575,7 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("|cff00ff00Hurray: Restore that unit did not exist for " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore that unit did not exist for " + GetUnitName(this.getUnit()) + "|r")
         call thistype.apply(this.getUnit())
     endmethod
 
@@ -767,6 +834,9 @@ struct TimeObjectImpl extends TimeObject
         return this.timeLine
     endmethod
 
+    public stub method onExists takes integer time returns nothing
+    endmethod
+
     public stub method startRecordingChanges takes integer time returns nothing
         set this.recordingChanges = true
         set this.recordingChangesStartTime = time
@@ -907,30 +977,6 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
 
 endstruct
 
-struct UnitTypes
-
-    public static method getWalkAnimationIndex takes integer unitTypeId returns integer
-        if (unitTypeId == 'H000' or unitTypeId == 'z000') then
-            return 5
-        elseif (unitTypeId == 'z001') then
-            return 2
-        endif
-
-        return 0
-    endmethod
-
-    public static method getWalkAnimationDuration takes integer unitTypeId returns real
-        if (unitTypeId == 'H000' or unitTypeId == 'z000') then
-            return 0.833
-        elseif (unitTypeId == 'z001') then
-            return 1.0
-        endif
-
-        return 0.0
-    endmethod
-
-endstruct
-
 struct TimeObjectUnit extends TimeObjectImpl
     private unit whichUnit
     private trigger orderTrigger
@@ -938,9 +984,16 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger dropTrigger
     private trigger deathTrigger
     private trigger damageTrigger
+    private trigger attackTrigger
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
+    endmethod
+
+    public stub method onExists takes integer time returns nothing
+        // adding these two change events will lead to hiding and pausing the unit before it existed
+        call this.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
+        call ChangeEventUnitExists.apply(this.whichUnit)
     endmethod
 
     public stub method shouldStopRecordingChanges takes nothing returns boolean
@@ -968,6 +1021,27 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public method getUnit takes nothing returns unit
         return this.whichUnit
+    endmethod
+
+    public method addChangeEventPosition takes integer time, real x, real y, real facing returns nothing
+        local ChangeEventUnitPosition changeEventPosition = ChangeEventUnitPosition.create(whichUnit)
+        local ChangeEventUnitFacing changeEventFacing = ChangeEventUnitFacing.create(whichUnit)
+        call this.addChangeEvent(time, changeEventPosition)
+        call changeEventPosition.setX(x)
+        call changeEventPosition.setY(y)
+        call this.addChangeEvent(time, changeEventFacing)
+        call changeEventFacing.setFacing(facing)
+    endmethod
+
+    public method addChangeEventPositionsOverTime takes integer startTime, integer endTime, real startX, real startY, real startFacing, real endX, real endY, real endFacing returns nothing
+        if (this.isInverted()) then
+            // startTime will be bigger than endTime!
+            // TODO Use interpolation and call addChangeEventPosition multiple times to get the path done
+        endif
+    endmethod
+
+    public method addChangeEventPositionsOverTimeRects takes integer startTime, integer endTime, rect startRect, real startFacing, rect endRect, real endFacing returns nothing
+        call this.addChangeEventPositionsOverTime(startTime, endTime, GetRectCenterX(startRect), GetRectCenterY(startRect), startFacing, GetRectCenterX(endRect), GetRectCenterY(endRect), endFacing)
     endmethod
 
     private static method triggerFunctionOrder takes nothing returns nothing
@@ -1002,6 +1076,15 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitTakesDamage.create(BlzGetEventDamageTarget(), GetEventDamageSource(), GetEventDamage(), BlzGetEventAttackType(), BlzGetEventDamageType()))
     endmethod
 
+    private static method triggerFunctionAttacked takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        local thistype other = thistype.fromUnit(GetAttacker())
+
+        if (other != 0) then
+            call other.addChangeEvent(globalTime.getTime(), ChangeEventUnitAnimation.create(other, UnitTypes.getAttackAnimationIndex(GetUnitTypeId(GetAttacker())), UnitTypes.getAttackAnimationDuration(GetUnitTypeId(GetAttacker()))))
+        endif
+    endmethod
+
     public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
         set this.whichUnit = whichUnit
@@ -1032,6 +1115,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.damageTrigger, function thistype.triggerFunctionDamage)
         call SaveData(this.damageTrigger, this)
 
+        set this.attackTrigger = CreateTrigger()
+        call TriggerRegisterUnitEvent(this.attackTrigger, whichUnit, EVENT_UNIT_ATTACKED)
+        call TriggerAddAction(this.attackTrigger, function thistype.triggerFunctionAttacked)
+        call SaveData(this.attackTrigger, this)
+
         call SaveData(this.whichUnit, this)
 
         return this
@@ -1060,6 +1148,10 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.damageTrigger)
         call DestroyTrigger(this.damageTrigger)
         set this.damageTrigger = null
+
+        call FlushData(this.attackTrigger)
+        call DestroyTrigger(this.attackTrigger)
+        set this.attackTrigger = null
     endmethod
 
     public static method fromUnit takes unit whichUnit returns thistype
@@ -1073,6 +1165,10 @@ struct TimeObjectItem extends TimeObjectImpl
 
     public stub method getName takes nothing returns string
         return GetItemName(this.whichItem) + super.getName()
+    endmethod
+
+    public stub method onExists takes integer time returns nothing
+        call ChangeEventItemExists.apply(this.whichItem)
     endmethod
 
     public static method create takes item whichItem, integer startTime, boolean inverted returns thistype
@@ -1121,15 +1217,19 @@ struct TimeImpl extends Time
                 // restore not inverted time line if possible
                 call timeObject.onRestore(time)
                 call timeLine.restore(timeObject, time)
-            elseif (timeObject.isRecordingChanges()) then
-                if (timeObject.shouldStopRecordingChanges()) then
-                    call timeObject.stopRecordingChanges(time)
-                else
-                    //call PrintMsg("Record changes for object: " + timeObject.getName())
-                    call timeObject.recordChanges(time)
-                endif
             else
-                //call PrintMsg("Neither record nor restore changes for: " + timeObject.getName())
+                if (time == timeObject.getStartTime()) then
+                    call timeObject.onExists(time)
+                endif
+
+                if (timeObject.isRecordingChanges()) then
+                    if (timeObject.shouldStopRecordingChanges()) then
+                        call timeObject.stopRecordingChanges(time)
+                    else
+                        //call PrintMsg("Record changes for object: " + timeObject.getName())
+                        call timeObject.recordChanges(time)
+                    endif
+                endif
             endif
             set i = i + 1
         endloop
@@ -1233,8 +1333,7 @@ struct TimeImpl extends Time
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns nothing
         local integer index = this.addObject(TimeObjectUnit.create(whichUnit, this.getTime(), inverted))
-        // adding these two change events will lead to hiding and pausing the unit before it existed
-        call this.timeObjects[index].addTwoChangeEventsNextToEachOther(this.getTime(), ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
+        call this.timeObjects[index].onExists(this.getTime())
     endmethod
 
     public stub method addItem takes boolean inverted, item whichItem returns nothing
@@ -1249,18 +1348,26 @@ struct TimeImpl extends Time
         loop
             exitwhen (i == GetPlayers())
             if (GetPlayerAlliance(Player(i), owner, ALLIANCE_SHARED_ADVANCED_CONTROL) or Player(i) == owner) then
-                call SelectUnitForPlayerSingle(copy, Player(i))
+                call SelectUnitAddForPlayer(copy, Player(i))
             endif
             set i = i + 1
         endloop
 
-        call this.addObject(TimeObjectUnit.create(copy, this.getTime(), inverted))
+        call this.addUnit(inverted, copy)
 
         return copy
     endmethod
 
     private method addGroupCopies takes boolean inverted, player owner, group whichGroup, real x, real y, real facing returns nothing
+        local integer i = 0
         local unit first = FirstOfGroup(whichGroup)
+        loop
+            exitwhen (i == GetPlayers())
+            if (GetPlayerAlliance(Player(i), owner, ALLIANCE_SHARED_ADVANCED_CONTROL) or Player(i) == owner) then
+                call ClearSelectionForPlayer(Player(i))
+            endif
+            set i = i + 1
+        endloop
         loop
             exitwhen (first == null)
             call this.addUnitCopy(inverted, owner, first, x, y, facing)
