@@ -26,6 +26,16 @@ library MapData
             return 0
         endmethod
 
+        public static method getDeathAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+                return 3
+            elseif (unitTypeId == 'z001') then
+                return 4
+            endif
+
+            return 0
+        endmethod
+
         public static method getWalkAnimationDuration takes integer unitTypeId returns real
             if (unitTypeId == 'H000' or unitTypeId == 'z000') then
                 return 0.833
@@ -41,6 +51,16 @@ library MapData
                 return 0.867
             elseif (unitTypeId == 'z001') then
                 return 1.0
+            endif
+
+            return 0.0
+        endmethod
+
+        public static method getDeathAnimationDuration takes integer unitTypeId returns real
+            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+                return 1.7
+            elseif (unitTypeId == 'z001') then
+                return 2.0
             endif
 
             return 0.0
@@ -146,6 +166,7 @@ interface TimeObject
      * For example if you add for a unit that it exists and did not exist on restoring it will be recreated properly.
      */
     public method addTwoChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
+    public method addThreeChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfterAfter, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
     /**
      * Called when the object is restored periodically.
      */
@@ -520,30 +541,45 @@ struct ChangeEventUnitDead extends ChangeEventUnit
         //call KillUnit(this.getUnit())
     endmethod
 
+    private static method startTimer takes unit whichUnit, real timeout, code func returns nothing
+        local timer tmpTimer = CreateTimer()
+        call SaveUnit(tmpTimer, whichUnit)
+        call TimerStart(tmpTimer, timeout, false, func)
+        set tmpTimer = null
+    endmethod
+
+    private static method flushTimer takes timer whichTimer returns nothing
+        call FlushData(whichTimer)
+        call PauseTimer(whichTimer)
+        call DestroyTimer(whichTimer)
+    endmethod
+
+    private static method timerFunctionReviveHero takes nothing returns nothing
+        local unit hero = LoadUnit(GetExpiredTimer())
+        call ReviveHero(hero, GetUnitX(hero), GetUnitY(hero), false)
+        set hero = null
+        call thistype.flushTimer(GetExpiredTimer())
+    endmethod
+
     private static method timerFunctionRemoveCaster takes nothing returns nothing
         local unit caster = LoadUnit(GetExpiredTimer())
         call RemoveUnit(caster)
         set caster = null
-        call FlushData(GetExpiredTimer())
-        call PauseTimer(GetExpiredTimer())
-        call DestroyTimer(GetExpiredTimer())
+        call thistype.flushTimer(GetExpiredTimer())
     endmethod
 
     public stub method restore takes nothing returns nothing
         local unit caster = null
-        local timer tmpTimer = null
         //call PrintMsg("|cff00ff00Hurray: Restore unit death for " + GetUnitName(this.getUnit()) + "|r")
         if (IsUnitType(this.getUnit(), UNIT_TYPE_HERO)) then
             // TODO Is called again and again.
-            call ReviveHero(this.getUnit(), GetUnitX(this.getUnit()), GetUnitY(this.getUnit()), true)
+            call thistype.startTimer(this.getUnit(), 0.0, function thistype.timerFunctionReviveHero)
         else
             set caster = CreateUnit(GetOwningPlayer(this.getUnit()), RESURRECT_UNIT_TYPE_ID, GetUnitX(this.getUnit()), GetUnitY(this.getUnit()), GetUnitFacing(this.getUnit()))
             call UnitAddAbility(caster, 'Aloc')
-            // TODO Fix the order
+            call ShowUnitHide(caster)
             call IssueImmediateOrderBJ(caster, "resurrection")
-            set tmpTimer = CreateTimer()
-            call SaveUnit(tmpTimer, caster)
-            call TimerStart(tmpTimer, 2.0, false, function thistype.timerFunctionRemoveCaster)
+            call thistype.startTimer(caster, 2.0, function thistype.timerFunctionRemoveCaster)
         endif
     endmethod
 
@@ -881,9 +917,15 @@ struct TimeObjectImpl extends TimeObject
         call timeFrame.addChangeEvent(changeEvent)
     endmethod
 
-     public stub method addTwoChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
+    public stub method addTwoChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
         call this.addChangeEvent(time, initialEvent)
         call this.addChangeEvent(time, eventAfter)
+    endmethod
+
+    public stub method addThreeChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfterAfter, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
+        call this.addChangeEvent(time, initialEvent)
+        call this.addChangeEvent(time, eventAfter)
+        call this.addChangeEvent(time, eventAfterAfter)
     endmethod
 
     public stub method onRestore takes integer time returns nothing
@@ -1068,7 +1110,10 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionDeath takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addTwoChangeEventsNextToEachOther(globalTime.getTime(), ChangeEventUnitAlive.create(whichUnit), ChangeEventUnitDead.create(whichUnit))
+        local ChangeEvent changeEventUnitAlive = ChangeEventUnitAlive.create(whichUnit)
+        local ChangeEvent changeEventUnitDead = ChangeEventUnitDead.create(whichUnit)
+        local ChangeEvent changeEventUnitAnimation = ChangeEventUnitAnimation.create(this, UnitTypes.getDeathAnimationIndex(GetUnitTypeId(GetTriggerUnit())), UnitTypes.getDeathAnimationDuration(GetUnitTypeId(GetTriggerUnit())))
+        call this.addThreeChangeEventsNextToEachOther(globalTime.getTime(), changeEventUnitAlive, changeEventUnitDead, changeEventUnitAnimation)
     endmethod
 
     private static method triggerFunctionDamage takes nothing returns nothing
