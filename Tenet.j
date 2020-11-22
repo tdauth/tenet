@@ -199,10 +199,10 @@ interface Time
     /**
      * After calling this method, the time of day will be stored and inverted as well when the global time is inverted.
      */
-    public method addTimeOfDay takes nothing returns nothing
+    public method addTimeOfDay takes nothing returns TimeObject
     public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
-    public method addUnit takes boolean inverted, unit whichUnit returns nothing
-    public method addItem takes boolean inverted, item whichItem returns nothing
+    public method addUnit takes boolean inverted, unit whichUnit returns TimeObject
+    public method addItem takes boolean inverted, item whichItem returns TimeObject
     public method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
 
 
@@ -396,6 +396,10 @@ struct ChangeEventUnitAnimation extends ChangeEventUnit
     private real animationDuration
     private real offset
 
+    public method setOffset takes real offset returns nothing
+        set this.offset = offset
+    endmethod
+
     public stub method onChange takes integer time returns nothing
         // TODO The animation might have changed after the recording has started!
         set this.offset = I2R(time) * TIMER_PERIODIC_INTERVAL - I2R(this.timeObjectUnit.getRecordingChangesStartTime())
@@ -502,20 +506,22 @@ struct ChangeEventUnitTakesDamage extends ChangeEventUnit
     private real damage
     private attacktype attackType
     private damagetype damageType
+    private real lifeAfter
 
     //call UnitDamageTargetBJ( GetEventDamageSource(), BlzGetEventDamageTarget(), GetEventDamage(), BlzGetEventAttackType(), BlzGetEventDamageType() )
 
     public stub method restore takes nothing returns nothing
-        call SetUnitLifeBJ(this.getUnit(), GetUnitStateSwap(UNIT_STATE_LIFE, this.getUnit()) + this.damage)
+        call SetUnitLifeBJ(this.getUnit(), this.lifeAfter + this.damage)
         //call PrintMsg("|cff00ff00Hurray: Restore unit damage " + GetUnitName(this.getUnit()) + "|r")
     endmethod
 
-    public static method create takes unit target, unit source, real damage, attacktype attackType, damagetype damageType returns thistype
+    public static method create takes unit target, unit source, real damage, attacktype attackType, damagetype damageType, real lifeAfter returns thistype
         local thistype this = thistype.allocate(target)
         set this.source = source
         set this.damage = damage
         set this.attackType = attackType
         set this.damageType = damageType
+        set this.lifeAfter = lifeAfter
 
         return this
     endmethod
@@ -1024,6 +1030,8 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger orderTrigger
     private trigger pickupTrigger
     private trigger dropTrigger
+    private trigger pawnTrigger
+    private trigger useTrigger
     private trigger deathTrigger
     private trigger damageTrigger
     private trigger attackTrigger
@@ -1075,15 +1083,79 @@ struct TimeObjectUnit extends TimeObjectImpl
         call changeEventFacing.setFacing(facing)
     endmethod
 
-    public method addChangeEventPositionsOverTime takes integer startTime, integer endTime, real startX, real startY, real startFacing, real endX, real endY, real endFacing returns nothing
-        if (this.isInverted()) then
-            // startTime will be bigger than endTime!
-            // TODO Use interpolation and call addChangeEventPosition multiple times to get the path done
+    // https://math.stackexchange.com/a/2045181
+    public method addChangeEventPositionsOverTime takes integer startTime, integer endTime, real startX, real startY, real startFacing, real endX, real endY, real endFacing, boolean clockwiseFacing returns nothing
+        local real tmp = 0
+        local ChangeEventUnitPosition changeEventUnitPosition = 0
+        local ChangeEventUnitFacing changeEventUnitFacing = 0
+        local ChangeEventUnitAnimation changeEventUnitAnimation = 0
+        local real distance = SquareRoot(Pow(endX - startX, 2.0) + Pow(endY - startY, 2.0))
+        local real facingDistance = RAbsBJ(endFacing - startFacing)
+        local real x = startX
+        local real y = startX
+        local real facing = startFacing
+        local integer i = startTime
+        local integer endValue = endTime
+
+        if (clockwiseFacing) then
+            set facingDistance = RAbsBJ(endFacing - 360.0 - startFacing)
         endif
+
+        if (startTime > endTime) then
+            set tmp = startX
+            set startX = endX
+            set endX = tmp
+
+            set tmp = startY
+            set startY = endY
+            set endY = tmp
+
+            set tmp = startFacing
+            set startFacing = endFacing
+            set endFacing = tmp
+
+            set i = endTime
+            set endValue = startTime
+        endif
+        call PrintMsg("Add change events over time start: " + I2S(i) + " and end: " + I2S(endValue) + " with distance " + R2S(distance) + " with facing distance " + R2S(facingDistance))
+        loop
+            exitwhen (i > endValue)
+            call PrintMsg("Add change event for time frame " + I2S(i))
+            if (distance > 0.0) then
+                // TODO i / distance should be i / distance / endValue
+                set tmp = I2R(i) / I2R(endValue) * distance
+                set x = startX + (tmp / distance) * (endX - startX)
+                set y = startY + (tmp / distance) * (endY - startY)
+                call PrintMsg("Add change event with x " + R2S(x) + " and y " + R2S(y) + " and facing " + R2S(facing))
+                set changeEventUnitPosition = ChangeEventUnitPosition.create(whichUnit)
+                call this.addChangeEvent(i, changeEventUnitPosition)
+                call changeEventUnitPosition.setX(x)
+                call changeEventUnitPosition.setY(y)
+
+                // walk animation
+                set changeEventUnitAnimation = ChangeEventUnitAnimation.create(this, UnitTypes.getWalkAnimationIndex(GetUnitTypeId(this.whichUnit)), UnitTypes.getWalkAnimationDuration(GetUnitTypeId(this.whichUnit)))
+                call this.addChangeEvent(i, changeEventUnitAnimation)
+                call changeEventUnitAnimation.setOffset(R2I(i))
+            endif
+
+            if (facingDistance > 0.0) then
+                set tmp = I2R(i) / I2R(endValue) * facingDistance
+                set facing = startFacing + (tmp / facingDistance) * facingDistance
+                set facing = ModuloReal(facing, 360.0)
+                call PrintMsg("Add change event with facing " + R2S(facing))
+                set changeEventUnitFacing = ChangeEventUnitFacing.create(whichUnit)
+                call this.addChangeEvent(i, changeEventUnitFacing)
+                call changeEventUnitFacing.setFacing(facing)
+            endif
+
+            call PrintMsg("Add change events over time for time: " + I2S(i))
+            set i = i + 1
+        endloop
+        call PrintMsg("Done adding change events over time!")
     endmethod
 
-    public method addChangeEventPositionsOverTimeRects takes integer startTime, integer endTime, rect startRect, real startFacing, rect endRect, real endFacing returns nothing
-        call this.addChangeEventPositionsOverTime(startTime, endTime, GetRectCenterX(startRect), GetRectCenterY(startRect), startFacing, GetRectCenterX(endRect), GetRectCenterY(endRect), endFacing)
+    public method addChangeEventPositionsOverTimeRects takes integer startTime, integer endTime, rect startRect, real startFacing, rect endRect, real endFacing, boolean clockwiseFacing returns nothing
+        call this.addChangeEventPositionsOverTime(startTime, endTime, GetRectCenterX(startRect), GetRectCenterY(startRect), startFacing, GetRectCenterX(endRect), GetRectCenterY(endRect), endFacing, clockwiseFacing)
     endmethod
 
     private static method triggerFunctionOrder takes nothing returns nothing
@@ -1108,6 +1180,16 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitDropItem.create(GetTriggerUnit(), GetManipulatedItem()))
     endmethod
 
+    private static method triggerFunctionPawnItem takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        // TODO We would have to know the exact gold cost and the slot it is bought to? Is the pickup trigger also called?
+    endmethod
+
+    private  static method triggerFunctionUseItem takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        // TODO We would have to know if it is used and what ability it has.
+    endmethod
+
     private static method triggerFunctionDeath takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         local ChangeEvent changeEventUnitAlive = ChangeEventUnitAlive.create(whichUnit)
@@ -1118,7 +1200,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionDamage takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitTakesDamage.create(BlzGetEventDamageTarget(), GetEventDamageSource(), GetEventDamage(), BlzGetEventAttackType(), BlzGetEventDamageType()))
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitTakesDamage.create(BlzGetEventDamageTarget(), GetEventDamageSource(), GetEventDamage(), BlzGetEventAttackType(), BlzGetEventDamageType(), GetUnitStateSwap(UNIT_STATE_LIFE, BlzGetEventDamageTarget())))
     endmethod
 
     private static method triggerFunctionAttacked takes nothing returns nothing
@@ -1149,6 +1231,16 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerRegisterUnitEvent(this.dropTrigger, whichUnit, EVENT_UNIT_DROP_ITEM)
         call TriggerAddAction(this.dropTrigger, function thistype.triggerFunctionDropItem)
         call SaveData(this.dropTrigger, this)
+
+        set this.pawnTrigger = CreateTrigger()
+        call TriggerRegisterUnitEvent(this.pawnTrigger, whichUnit, EVENT_UNIT_PAWN_ITEM)
+        call TriggerAddAction(this.pawnTrigger, function thistype.triggerFunctionPawnItem)
+        call SaveData(this.pawnTrigger, this)
+
+        set this.useTrigger = CreateTrigger()
+        call TriggerRegisterUnitEvent(this.useTrigger, whichUnit, EVENT_UNIT_USE_ITEM)
+        call TriggerAddAction(this.useTrigger, function thistype.triggerFunctionUseItem)
+        call SaveData(this.useTrigger, this)
 
         set this.deathTrigger = CreateTrigger()
         call TriggerRegisterUnitEvent(this.deathTrigger, whichUnit, EVENT_UNIT_DEATH)
@@ -1185,6 +1277,14 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.dropTrigger)
         call DestroyTrigger(this.dropTrigger)
         set this.dropTrigger = null
+
+        call FlushData(this.pawnTrigger)
+        call DestroyTrigger(this.pawnTrigger)
+        set this.pawnTrigger = null
+
+        call FlushData(this.useTrigger)
+        call DestroyTrigger(this.useTrigger)
+        set this.useTrigger = null
 
         call FlushData(this.deathTrigger)
         call DestroyTrigger(this.deathTrigger)
@@ -1367,8 +1467,8 @@ struct TimeImpl extends Time
         call ResumeTimer(this.whichTimer)
     endmethod
 
-    public stub method addTimeOfDay takes nothing returns nothing
-        call this.addObject(TimeObjectTimeOfDay.create(this.getTime(), false))
+    public stub method addTimeOfDay takes nothing returns TimeObject
+        return this.addObject(TimeObjectTimeOfDay.create(this.getTime(), false))
     endmethod
 
     public stub method addMusic takes string whichMusic, string whichMusicInverted returns nothing
@@ -1376,15 +1476,21 @@ struct TimeImpl extends Time
         call this.addObject(TimeObjectMusicInverted.create(this.getTime(), this, whichMusic, whichMusicInverted))
     endmethod
 
-    public stub method addUnit takes boolean inverted, unit whichUnit returns nothing
-        local integer index = this.addObject(TimeObjectUnit.create(whichUnit, this.getTime(), inverted))
+    public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
+        local TimeObjectUnit result = TimeObjectUnit.create(whichUnit, this.getTime(), inverted)
+        local integer index = this.addObject(result)
         call this.timeObjects[index].onExists(this.getTime())
+
+        return result
     endmethod
 
-    public stub method addItem takes boolean inverted, item whichItem returns nothing
-        local integer index = this.addObject(TimeObjectItem.create(whichItem, this.getTime(), inverted))
+    public stub method addItem takes boolean inverted, item whichItem returns TimeObject
+        local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
+        local integer index = this.addObject(result)
         // adding these two change events will lead to hiding the item before it existed
         call this.timeObjects[index].addTwoChangeEventsNextToEachOther(this.getTime(), ChangeEventItemExists.create(whichItem), ChangeEventItemDoesNotExist.create(whichItem))
+
+        return result
     endmethod
 
     public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
