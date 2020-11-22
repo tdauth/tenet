@@ -84,12 +84,20 @@ function SaveUnit takes handle whichHandle, unit data returns nothing
     call SaveUnitHandle(dataHashTable, GetHandleId(whichHandle), 0, data)
 endfunction
 
+function SaveEffect takes handle whichHandle, effect whichEffect returns nothing
+    call SaveEffectHandle(dataHashTable, GetHandleId(whichHandle), 0, whichEffect)
+endfunction
+
 function LoadData takes handle whichHandle returns integer
     return LoadInteger(dataHashTable, GetHandleId(whichHandle), 0)
 endfunction
 
 function LoadUnit takes handle whichHandle returns unit
     return LoadUnitHandle(dataHashTable, GetHandleId(whichHandle), 0)
+endfunction
+
+function LoadEffect takes handle whichHandle returns effect
+    return LoadEffectHandle(dataHashTable, GetHandleId(whichHandle), 0)
 endfunction
 
 function HaveSavedData takes handle whichHandle returns boolean
@@ -220,6 +228,11 @@ interface Time
      */
     public method redGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
     public method blueGate takes player owner, group whichGroup, real x, real y, real facing returns boolean
+
+    /**
+     * Changes to the time offset (which can be negative or positive depending of the current time direction).
+     */
+    public method toTime takes integer offset returns nothing
 endinterface
 
 struct ChangeEventImpl extends ChangeEvent
@@ -418,6 +431,47 @@ struct ChangeEventUnitAnimation extends ChangeEventUnit
         set this.animationDuration = animationDuration
 
         return this
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitLevel extends ChangeEventUnit
+    private integer level
+
+    public stub method onChange takes integer time returns nothing
+        set this.level = GetHeroLevel(this.getUnit())
+    endmethod
+
+    private static method timerFunctionHeroLevel takes nothing returns nothing
+        local thistype this = thistype(LoadData(GetExpiredTimer()))
+        local timer whichTimer = CreateTimer()
+        local effect whichEffect = AddSpecialEffectTargetUnitBJ("overhead", this.getUnit(), "Abilities\\Spells\\Other\\Levelup\\Levelupcaster.mdx")
+        call SetHeroLevelBJ(this.getUnit(), this.level - 1, false)
+        call BlzSetSpecialEffectTime(whichEffect, 5000.0)
+        call BlzSetSpecialEffectTimeScale(whichEffect, -1.0)
+        call TimerStart(whichTimer, 4.0, false, function thistype.timerFunctionRemoveSpecialEffect)
+        call SaveEffect(whichTimer, whichEffect)
+        set whichTimer = null
+        set whichEffect = null
+        call PauseTimer(GetExpiredTimer())
+        call FlushData(GetExpiredTimer())
+        call DestroyTimer(GetExpiredTimer())
+    endmethod
+
+    private static method timerFunctionRemoveSpecialEffect takes nothing returns nothing
+        local effect whichEffect = LoadEffect(GetExpiredTimer())
+        call DestroyEffect(whichEffect)
+        set whichEffect = null
+        call PauseTimer(GetExpiredTimer())
+        call FlushData(GetExpiredTimer())
+        call DestroyTimer(GetExpiredTimer())
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        local timer whichTimer = CreateTimer()
+        call TimerStart(whichTimer, 0.0, false, function thistype.timerFunctionHeroLevel)
+        call SaveData(whichTimer, this)
+        set whichTimer = null
     endmethod
 
 endstruct
@@ -1035,6 +1089,8 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger deathTrigger
     private trigger damageTrigger
     private trigger attackTrigger
+    private trigger levelTrigger
+    private trigger acquireTargetTrigger
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
@@ -1117,16 +1173,16 @@ struct TimeObjectUnit extends TimeObjectImpl
             set i = endTime
             set endValue = startTime
         endif
-        call PrintMsg("Add change events over time start: " + I2S(i) + " and end: " + I2S(endValue) + " with distance " + R2S(distance) + " with facing distance " + R2S(facingDistance))
+        //call PrintMsg("Add change events over time start: " + I2S(i) + " and end: " + I2S(endValue) + " with distance " + R2S(distance) + " with facing distance " + R2S(facingDistance))
         loop
             exitwhen (i > endValue)
-            call PrintMsg("Add change event for time frame " + I2S(i))
+            //call PrintMsg("Add change event for time frame " + I2S(i))
             if (distance > 0.0) then
                 // TODO i / distance should be i / distance / endValue
                 set tmp = I2R(i) / I2R(endValue) * distance
                 set x = startX + (tmp / distance) * (endX - startX)
                 set y = startY + (tmp / distance) * (endY - startY)
-                call PrintMsg("Add change event with x " + R2S(x) + " and y " + R2S(y) + " and facing " + R2S(facing))
+                //call PrintMsg("Add change event with x " + R2S(x) + " and y " + R2S(y) + " and facing " + R2S(facing))
                 set changeEventUnitPosition = ChangeEventUnitPosition.create(whichUnit)
                 call this.addChangeEvent(i, changeEventUnitPosition)
                 call changeEventUnitPosition.setX(x)
@@ -1142,16 +1198,16 @@ struct TimeObjectUnit extends TimeObjectImpl
                 set tmp = I2R(i) / I2R(endValue) * facingDistance
                 set facing = startFacing + (tmp / facingDistance) * facingDistance
                 set facing = ModuloReal(facing, 360.0)
-                call PrintMsg("Add change event with facing " + R2S(facing))
+                //call PrintMsg("Add change event with facing " + R2S(facing))
                 set changeEventUnitFacing = ChangeEventUnitFacing.create(whichUnit)
                 call this.addChangeEvent(i, changeEventUnitFacing)
                 call changeEventUnitFacing.setFacing(facing)
             endif
 
-            call PrintMsg("Add change events over time for time: " + I2S(i))
+            //call PrintMsg("Add change events over time for time: " + I2S(i))
             set i = i + 1
         endloop
-        call PrintMsg("Done adding change events over time!")
+        //call PrintMsg("Done adding change events over time!")
     endmethod
 
     public method addChangeEventPositionsOverTimeRects takes integer startTime, integer endTime, rect startRect, real startFacing, rect endRect, real endFacing, boolean clockwiseFacing returns nothing
@@ -1212,6 +1268,24 @@ struct TimeObjectUnit extends TimeObjectImpl
         endif
     endmethod
 
+    private static method triggerFunctionLevel takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitLevel.create(GetTriggerUnit()))
+    endmethod
+
+    private static method triggerFunctionAcquireTarget takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        local ChangeEventUnitFacing changeEventFacing = ChangeEventUnitFacing.create(GetTriggerUnit())
+        local location unitLocation = GetUnitLoc(GetTriggerUnit())
+        local location targetLocation = GetUnitLoc(GetEventTargetUnit())
+        call this.addChangeEvent(globalTime.getTime(), changeEventFacing)
+        call changeEventFacing.setFacing(AngleBetweenPoints(unitLocation, targetLocation))
+        call RemoveLocation(unitLocation)
+        set unitLocation = null
+        call RemoveLocation(targetLocation)
+        set targetLocation = null
+    endmethod
+
     public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
         set this.whichUnit = whichUnit
@@ -1257,6 +1331,16 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.attackTrigger, function thistype.triggerFunctionAttacked)
         call SaveData(this.attackTrigger, this)
 
+        set this.levelTrigger = CreateTrigger()
+        call TriggerRegisterUnitEvent(this.levelTrigger, whichUnit, EVENT_UNIT_HERO_LEVEL)
+        call TriggerAddAction(this.levelTrigger, function thistype.triggerFunctionLevel)
+        call SaveData(this.levelTrigger, this)
+
+        set this.acquireTargetTrigger = CreateTrigger()
+        call TriggerRegisterUnitEvent(this.acquireTargetTrigger, whichUnit, EVENT_UNIT_ACQUIRED_TARGET)
+        call TriggerAddAction(this.acquireTargetTrigger, function thistype.triggerFunctionAcquireTarget)
+        call SaveData(this.acquireTargetTrigger, this)
+
         call SaveData(this.whichUnit, this)
 
         return this
@@ -1297,6 +1381,14 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.attackTrigger)
         call DestroyTrigger(this.attackTrigger)
         set this.attackTrigger = null
+
+        call FlushData(this.levelTrigger)
+        call DestroyTrigger(this.levelTrigger)
+        set this.levelTrigger = null
+
+        call FlushData(this.acquireTargetTrigger)
+        call DestroyTrigger(this.acquireTargetTrigger)
+        set this.acquireTargetTrigger = null
     endmethod
 
     public static method fromUnit takes unit whichUnit returns thistype
@@ -1606,6 +1698,21 @@ struct TimeImpl extends Time
         set gateGroup = null
 
         return false
+    endmethod
+
+    public stub method toTime takes integer offset returns nothing
+        local boolean isNegative = offset < 0
+        local integer toTime = this.getTime() + offset
+        local integer i = this.getTime()
+        loop
+            exitwhen (this.getTime() == toTime)
+            if (isNegative) then
+                set i = i - 1
+            else
+                set i = i + 1
+            endif
+            call this.setTime(i)
+        endloop
     endmethod
 
     public static method create takes nothing returns thistype
