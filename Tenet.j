@@ -68,6 +68,18 @@ library MapData
 
     endstruct
 
+    struct Destructables
+
+        public static method getDeathAnimationIndex takes integer destructableTypeId returns integer
+            return 0
+        endmethod
+
+        public static method getDeathAnimationDuration takes integer destructableTypeId returns real
+            return 0.0
+        endmethod
+
+    endstruct
+
 endlibrary
 
 library TenetUtility
@@ -211,6 +223,7 @@ interface Time
     public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
     public method addUnit takes boolean inverted, unit whichUnit returns TimeObject
     public method addItem takes boolean inverted, item whichItem returns TimeObject
+    public method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
     public method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
 
 
@@ -732,6 +745,114 @@ struct ChangeEventItemDoesNotExist extends ChangeEventItem
 
     public static method apply takes item whichItem returns nothing
         call SetItemVisible(whichItem, false)
+    endmethod
+
+endstruct
+
+struct ChangeEventDestructable extends ChangeEventImpl
+    private destructable whichDestructable
+
+    public method getDestructable takes nothing returns destructable
+        return this.whichDestructable
+    endmethod
+
+    public stub method onChange takes integer time returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+    endmethod
+
+    public static method create takes destructable whichDestructable returns thistype
+        local thistype this = thistype.allocate()
+        set this.whichDestructable = whichDestructable
+
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventDestructableExists extends ChangeEventDestructable
+
+    public stub method onChange takes integer time returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call thistype.apply(this.getDestructable())
+    endmethod
+
+    public static method apply takes destructable whichDestructable returns nothing
+        call ShowDestructableBJ(true, whichDestructable)
+        //call SetDestructableInvulnerableBJ(whichDestructable, false)
+    endmethod
+
+endstruct
+
+struct ChangeEventDestructableDoesNotExist extends ChangeEventDestructable
+
+    public stub method onChange takes integer time returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call ShowDestructableBJ(false, this.getDestructable())
+        //call SetDestructableInvulnerableBJ(this.getDestructable(), true)
+    endmethod
+
+endstruct
+
+struct ChangeEventDestructableAlive extends ChangeEventDestructable
+
+    public stub method onChange takes integer time returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        // TODO not max life but the life before dying!
+        call PrintMsg("Hurray: Ressurect " + GetDestructableName(this.getDestructable()))
+        call KillDestructable(this.getDestructable())
+    endmethod
+
+endstruct
+
+struct ChangeEventDestructableDead extends ChangeEventDestructable
+
+    public stub method onChange takes integer time returns nothing
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call PrintMsg("Hurray: Kill " + GetDestructableName(this.getDestructable()))
+        call DestructableRestoreLife(this.getDestructable(), GetDestructableMaxLife(this.getDestructable()), true)
+    endmethod
+
+endstruct
+
+struct ChangeEventDestructableAnimation extends ChangeEventDestructable
+    private TimeObject timeObjectDestructable
+    private integer animationIndex
+    private real animationDuration
+    private real offset
+
+    public method setOffset takes real offset returns nothing
+        set this.offset = offset
+    endmethod
+
+    public stub method onChange takes integer time returns nothing
+        // TODO The animation might have changed after the recording has started!
+        set this.offset = I2R(time) * TIMER_PERIODIC_INTERVAL - I2R(this.timeObjectDestructable.getRecordingChangesStartTime())
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        local real animTime = ModuloReal(this.offset, this.animationDuration)
+        //call PrintMsg("|cff00ff00Hurray: Restore animation for " + GetUnitName(this.getUnit()) + " at animation time " + R2S(animTime) + " with animation duration " + R2S(this.animationDuration) + "|r")
+        // TODO Reverse animation of destructable
+        //call SetUnitAnimationReverse(this.getUnit(), this.animationIndex, animTime, 1.0, true)
+    endmethod
+
+    public static method create takes TimeObjectDestructable timeObjectDestructable, integer animationIndex, real animationDuration returns thistype
+        local thistype this = thistype.allocate(timeObjectDestructable.getDestructable())
+        set this.timeObjectDestructable = timeObjectDestructable
+        set this.animationIndex = animationIndex
+        set this.animationDuration = animationDuration
+
+        return this
     endmethod
 
 endstruct
@@ -1405,6 +1526,8 @@ struct TimeObjectItem extends TimeObjectImpl
     endmethod
 
     public stub method onExists takes integer time returns nothing
+        // adding these two change events will lead to hiding and pausing the unit before it existed
+        call this.addTwoChangeEventsNextToEachOther(time, ChangeEventItemExists.create(whichItem), ChangeEventItemDoesNotExist.create(whichItem))
         call ChangeEventItemExists.apply(this.whichItem)
     endmethod
 
@@ -1423,6 +1546,61 @@ struct TimeObjectItem extends TimeObjectImpl
 
     public static method fromItem takes item whichItem returns thistype
         return LoadData(whichItem)
+    endmethod
+
+endstruct
+
+struct TimeObjectDestructable extends TimeObjectImpl
+    private destructable whichDestructable
+    private trigger deathTrigger
+
+    public stub method getName takes nothing returns string
+        return GetDestructableName(whichDestructable) + super.getName()
+    endmethod
+
+    public stub method onExists takes integer time returns nothing
+        // adding these two change events will lead to hiding and pausing the destructable before it existed
+        call this.addTwoChangeEventsNextToEachOther(time, ChangeEventDestructableExists.create(whichDestructable), ChangeEventDestructableDoesNotExist.create(whichDestructable))
+        call ChangeEventDestructableExists.apply(this.whichDestructable)
+    endmethod
+
+    public method getDestructable takes nothing returns destructable
+        return this.whichDestructable
+    endmethod
+
+    private static method triggerFunctionDeath takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        local ChangeEvent changeEventDestructableAlive = ChangeEventDestructableAlive.create(GetDyingDestructable())
+        local ChangeEvent changeEventDestructableDead = ChangeEventDestructableDead.create(GetDyingDestructable())
+        local ChangeEvent changeEventDestructabletAnimation = ChangeEventDestructableAnimation.create(this, Destructables.getDeathAnimationIndex(GetDestructableTypeId(GetDyingDestructable())), Destructables.getDeathAnimationDuration(GetDestructableTypeId(GetDyingDestructable())))
+        call this.addThreeChangeEventsNextToEachOther(globalTime.getTime(), changeEventDestructableAlive, changeEventDestructableDead, changeEventDestructabletAnimation)
+    endmethod
+
+    public static method create takes destructable whichDestructable, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichDestructable = whichDestructable
+
+        set this.deathTrigger = CreateTrigger()
+        call TriggerRegisterDeathEvent(this.deathTrigger, whichDestructable)
+        call TriggerAddAction(this.deathTrigger, function thistype.triggerFunctionDeath)
+        call SaveData(this.deathTrigger, this)
+
+        call SaveData(this.whichDestructable, this)
+
+        return this
+    endmethod
+
+    public method onDestroy takes nothing returns nothing
+        call FlushData(this.whichDestructable)
+        set this.whichDestructable = null
+
+        call FlushData(this.deathTrigger)
+        call DestroyTrigger(this.deathTrigger)
+        set this.deathTrigger = null
+    endmethod
+
+    public static method fromDestructable takes destructable whichDestructable returns thistype
+        return LoadData(whichDestructable)
     endmethod
 
 endstruct
@@ -1571,7 +1749,7 @@ struct TimeImpl extends Time
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
         local TimeObjectUnit result = TimeObjectUnit.create(whichUnit, this.getTime(), inverted)
         local integer index = this.addObject(result)
-        call this.timeObjects[index].onExists(this.getTime())
+        call result.onExists(this.getTime())
 
         return result
     endmethod
@@ -1579,8 +1757,15 @@ struct TimeImpl extends Time
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
         local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
         local integer index = this.addObject(result)
-        // adding these two change events will lead to hiding the item before it existed
-        call this.timeObjects[index].addTwoChangeEventsNextToEachOther(this.getTime(), ChangeEventItemExists.create(whichItem), ChangeEventItemDoesNotExist.create(whichItem))
+        call result.onExists(this.getTime())
+
+        return result
+    endmethod
+
+    public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
+        local TimeObjectDestructable result = TimeObjectDestructable.create(whichDestructable, this.getTime(), inverted)
+        local integer index = this.addObject(result)
+        call result.onExists(this.getTime())
 
         return result
     endmethod
