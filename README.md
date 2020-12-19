@@ -40,6 +40,10 @@ The players have to lure the Hydralisks away from the Algorithm to switch it.
 Hence, the players can go back in time to certain point in time when the Algorithm is not protected and pick it up and drop it somewhere.
 Then the players can go forward and pick it up before it is picked up by the inverted Protagonist.
 
+## Videos
+
+[Video of an early version of the scenario on YouTube](https://www.youtube.com/watch?v=qVlEL9Wzz_Y)
+
 ## TODOs
 
 * Maybe limit the number of possible copies or maybe simplify the concept of inversion by not copying someone who goes through the gate?

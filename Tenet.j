@@ -80,6 +80,21 @@ library MapData
 
     endstruct
 
+    struct SpellTypes
+
+        // inverted effect of a spell
+        public static method noTargetSpell takes integer abilityId returns nothing
+            if (abilityId == 'A003') then
+                if (globalTime.isInverted()) then
+                    //call globalTime.toTime(10)
+                else
+                    //call globalTime.toTime(10)
+                endif
+            endif
+        endmethod
+
+    endstruct
+
 endlibrary
 
 library TenetUtility
@@ -126,7 +141,7 @@ endfunction
 
 endlibrary
 
-library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation
+library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit
 
 globals
     constant real TIMER_PERIODIC_INTERVAL = 0.10
@@ -178,7 +193,7 @@ interface TimeObject
     public method recordChanges takes integer time returns nothing
     public method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
 
-    // helper method
+    // helper methods
 
     /**
      * Adds two events at the given time next to each other.
@@ -246,6 +261,7 @@ interface Time
      * Changes to the time offset (which can be negative or positive depending of the current time direction).
      */
     public method toTime takes integer offset returns nothing
+    public method toTimeDelayed takes integer offset, real delay returns nothing
 endinterface
 
 struct ChangeEventImpl extends ChangeEvent
@@ -691,6 +707,56 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
     public static method apply takes unit whichUnit returns nothing
         call ShowUnitHide(whichUnit)
         call PauseUnitBJ(true, whichUnit)
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitCastsSpell extends ChangeEventUnit
+    private integer abilityId
+    private real manaCost
+
+    public method getAbilityId takes nothing returns integer
+        return abilityId
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitCastsSpellNoTarget extends ChangeEventUnitCastsSpell
+
+    public stub method restore takes nothing returns nothing
+        call SpellTypes.noTargetSpell(this.getAbilityId())
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitLoaded extends ChangeEventUnit
+    private unit transporter
+
+    public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
+    endmethod
+
+    public static method create takes unit loadedUnit, unit transporter returns thistype
+        local thistype this = thistype.allocate(loadedUnit)
+        set this.transporter = transporter
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitUnloaded extends ChangeEventUnit
+    private unit transporter
+
+    public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore unloaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call IssueTargetOrderBJ(transporter, "load", this.getUnit())
+    endmethod
+
+    public static method create takes unit unloadedUnit, unit transporter returns thistype
+        local thistype this = thistype.allocate(unloadedUnit)
+        set this.transporter = transporter
+        return this
     endmethod
 
 endstruct
@@ -1212,6 +1278,8 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger attackTrigger
     private trigger levelTrigger
     private trigger acquireTargetTrigger
+    private trigger loadTrigger
+    private trigger unloadTrigger
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
@@ -1407,6 +1475,26 @@ struct TimeObjectUnit extends TimeObjectImpl
         set targetLocation = null
     endmethod
 
+    private static method triggerConditionLoad takes nothing returns boolean
+        local thistype this = LoadData(GetTriggeringTrigger())
+        return GetLoadedUnit() == this.whichUnit
+    endmethod
+
+    private static method triggerFunctionLoad takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
+    endmethod
+
+    private static method triggerConditionUnload takes nothing returns boolean
+        local thistype this = LoadData(GetTriggeringTrigger())
+        return GetUnloadingTransportUnit() == this.whichUnit
+    endmethod
+
+    private static method triggerFunctionUnload takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
+    endmethod
+
     public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
         set this.whichUnit = whichUnit
@@ -1462,6 +1550,18 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.acquireTargetTrigger, function thistype.triggerFunctionAcquireTarget)
         call SaveData(this.acquireTargetTrigger, this)
 
+        set this.loadTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(this.loadTrigger, EVENT_PLAYER_UNIT_LOADED)
+        call TriggerAddCondition(this.loadTrigger, Condition(function thistype.triggerConditionLoad))
+        call TriggerAddAction(this.loadTrigger, function thistype.triggerFunctionLoad)
+        call SaveData(this.loadTrigger, this)
+
+        set this.unloadTrigger = CreateTrigger()
+        call TriggerRegisterUnitUnloadedEvent(this.unloadTrigger)
+        call TriggerAddCondition(this.loadTrigger, Condition(function thistype.triggerConditionUnload))
+        call TriggerAddAction(this.unloadTrigger, function thistype.triggerFunctionUnload)
+        call SaveData(this.unloadTrigger, this)
+
         call SaveData(this.whichUnit, this)
 
         return this
@@ -1510,6 +1610,15 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.acquireTargetTrigger)
         call DestroyTrigger(this.acquireTargetTrigger)
         set this.acquireTargetTrigger = null
+
+
+        call FlushData(this.loadTrigger)
+        call DestroyTrigger(this.loadTrigger)
+        set this.loadTrigger = null
+
+        call FlushData(this.unloadTrigger)
+        call DestroyTrigger(this.unloadTrigger)
+        set this.unloadTrigger = null
     endmethod
 
     public static method fromUnit takes unit whichUnit returns thistype
@@ -1734,7 +1843,8 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method resume takes nothing returns nothing
-        call ResumeTimer(this.whichTimer)
+        call TimerStart(this.whichTimer, TIMER_PERIODIC_INTERVAL, true, function thistype.timerFunction)
+        //call ResumeTimer(this.whichTimer)
     endmethod
 
     public stub method addTimeOfDay takes nothing returns TimeObject
@@ -1771,7 +1881,7 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
-        local unit copy = CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing)
+        local unit copy = CopyUnit(owner, whichUnit, x, y, facing)
         local integer i = 0
         loop
             exitwhen (i == GetPlayers())
@@ -1885,6 +1995,25 @@ struct TimeImpl extends Time
         return false
     endmethod
 
+    private method setTimeRestoringOnly takes integer time returns nothing
+        local integer i = 0
+        local TimeObject timeObject = 0
+        local TimeLine timeLine = 0
+        set this.time = time
+        set i = 0
+        loop
+            exitwhen (i == this.getObjectsSize())
+            set timeObject = this.timeObjects[i]
+            set timeLine = timeObject.getTimeLine()
+            //call PrintMsg("Restore changes for object: " + timeObject.getName())
+            call timeObject.onRestore(time)
+            call timeLine.restore(timeObject, time)
+            set i = i + 1
+        endloop
+
+        //call PrintMsg("setTime: " + I2S(this.getTime()) + " with " + I2S(this.getObjectsSize()) + " objects for time instance " + I2S(this))
+    endmethod
+
     public stub method toTime takes integer offset returns nothing
         local boolean isNegative = offset < 0
         local integer toTime = this.getTime() + offset
@@ -1896,8 +2025,37 @@ struct TimeImpl extends Time
             else
                 set i = i + 1
             endif
-            call this.setTime(i)
+            call this.setTimeRestoringOnly(i)
         endloop
+    endmethod
+
+    public stub method toTimeDelayed takes integer offset, real delay returns nothing
+        local boolean isNegative = offset < 0
+        local integer toTime = this.getTime() + offset
+        local integer i = this.getTime()
+        local real delayPerTick = delay / RAbsBJ(this.getTime() - offset)
+
+        if ((isNegative and this.isInverted()) or (not isNegative and not this.isInverted())) then
+            call PrintMsg("Invalid call of toTimeDelayed with offset " + R2S(offset) + ". You can only call it with a negative value if the time is not inverted or with a positive value if the time is inverted!")
+        endif
+
+        // TODO Pause all units etc.
+        call this.pause()
+        loop
+            if (isNegative) then
+                exitwhen (this.getTime() <= toTime)
+                set i = i - 1
+            else
+                exitwhen (this.getTime() >= toTime)
+                set i = i + 1
+            endif
+            call this.setTimeRestoringOnly(i)
+            call PolledWait(delayPerTick)
+            call PrintMsg("After tick")
+        endloop
+        call PrintMsg("Resume time!")
+        // TODO Unpause all units etc.
+        call this.resume()
     endmethod
 
     public static method create takes nothing returns thistype
@@ -1920,7 +2078,7 @@ globals
     Time globalTime = 0
 endglobals
 
-function Init takes nothing returns nothing
+private function Init takes nothing returns nothing
     set globalTime = TimeImpl.create()
 endfunction
 
@@ -2875,5 +3033,256 @@ library ReverseAnimation requires TimerUtils
        endmethod
 
    endstruct
+
+endlibrary
+
+library CopyUnit requires Transports
+
+    private function CopyGroup takes group whichGroup returns group
+        local group copy = CreateGroup()
+        call GroupAddGroup(copy, whichGroup)
+        return copy
+    endfunction
+
+    function CopyUnit takes player owner, unit whichUnit, real x, real y, real facing returns unit
+        local unit result = CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing)
+        local group transportedUnits = GetTransportedUnits(whichUnit)
+        local group transportedUnitsCopy = CopyGroup(transportedUnits)
+        local unit first = null
+        loop
+            set first = FirstOfGroup(transportedUnitsCopy)
+            exitwhen (first == null)
+            call CopyUnit(owner, first, x, y, facing) // TODO return as group
+        endloop
+
+        call DestroyGroup(transportedUnitsCopy)
+        set transportedUnitsCopy = null
+
+        return result
+    endfunction
+
+endlibrary
+
+/**
+ * Inspired by:
+ * https://www.hiveworkshop.com/threads/transporters-system.329045
+ * https://www.hiveworkshop.com/threads/uniteventsex.306289/
+ *
+ * TODO Support corpses as the other systems or just use the UnitEventsEx system instead of my own.
+ */
+library Transports initializer Init
+    //*********************************************************************
+    //* Transports 1.0 (by Baradé)
+    //* ----------
+    //*
+    //* To implement it, create a custom text trigger called Transports
+    //* and paste the contents of this script there.
+    //*
+    //* To copy from a map to another, copy the trigger holding this
+    //* library to your map.
+    //*
+    //* (requires vJass)
+    //*
+    //* function GetTransportedUnits takes:
+    //*
+    //*     unit whichUnit - the unit which holds loaded units;
+    //*
+    //* returns:
+    //*
+    //*     group - all loaded units;
+    //*
+    //* function GetTransportsUnits takes nothing
+    //*
+    //* returns:
+    //*
+    //*     group - all transports units;
+    //*
+    //* function IsUnitAnyTransport takes:
+    //*
+    //*     unit whichUnit - the unit which might be a transport;
+    //*
+    //* returns:
+    //*
+    //*     boolean - true if the given unit is a transport. Otherwise, false;
+    //*
+    //* function GetUnitTransport takes:
+    //*
+    //*     unit whichUnit - the unit which is transported or not;
+    //*
+    //* returns:
+    //*
+    //*     unit - null if the unit has no transport. Otherwise, it returns the transport;
+    //*
+    //* function GetUnloadedUnit takes nothing:
+    //*
+    //* returns:
+    //*
+    //*     unit - the unloaded unit;
+    //*
+    //* function GetUnloadingTransportUnit takes nothing:
+    //*
+    //* returns:
+    //*
+    //*     unit - the unloading transport unit;
+    //*
+    //* function TriggerRegisterUnitUnloadedEvent takes:
+    //*
+    //*     trigger whichTrigger - the trigger the event is registered for;
+    //*
+    //********************************************************************
+
+    native UnitAlive takes unit u returns boolean
+
+    globals
+        hashtable whichHashTable = InitHashtable()
+        hashtable transportsHashTable = InitHashtable()
+        hashtable transportersHashTable = InitHashtable()
+        trigger loadTrigger = CreateTrigger()
+        trigger unloadTrigger = CreateTrigger()
+    endglobals
+
+    private function PrintMsg takes string msg returns nothing
+        call DisplayTextToForce(GetPlayersAll(), msg)
+    endfunction
+
+    private function CopyGroup takes group whichGroup returns group
+        local group copy = CreateGroup()
+        call PrintMsg("Size of the loaded group: " + I2S(CountUnitsInGroup(whichGroup)))
+        call GroupAddGroup(whichGroup, copy)
+        call PrintMsg("Size of the copy group: " + I2S(CountUnitsInGroup(copy)))
+        return copy
+    endfunction
+
+    private function ClearTransportedUnits takes unit whichUnit returns nothing
+        if (HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), 0)) then
+            call DestroyGroup(LoadGroupHandle(whichHashTable, GetHandleId(whichUnit), 0))
+            call RemoveSavedHandle(whichHashTable, GetHandleId(whichUnit), 0)
+        endif
+    endfunction
+
+    function GetTransportedUnits takes unit whichUnit returns group
+        if (HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), 0)) then
+            return CopyGroup(LoadGroupHandle(whichHashTable, GetHandleId(whichUnit), 0))
+        else
+            return CreateGroup()
+        endif
+    endfunction
+
+    private function UpdateTransportedUnits takes unit transport, group transportedUnits returns nothing
+        call SaveGroupHandle(whichHashTable, GetHandleId(transport), 0, transportedUnits)
+    endfunction
+
+    private function ClearTransportsUnits takes nothing returns nothing
+        if (HaveSavedHandle(transportsHashTable, 1, 1)) then
+            call DestroyGroup(LoadGroupHandle(transportsHashTable, 1, 1))
+            call RemoveSavedHandle(transportsHashTable, 1, 1)
+        endif
+    endfunction
+
+    function GetTransportsUnits takes nothing returns group
+        if (HaveSavedHandle(transportsHashTable, 1, 1)) then
+            return CopyGroup(LoadGroupHandle(transportsHashTable, 1, 1))
+        else
+            return CreateGroup()
+        endif
+    endfunction
+
+    private function UpdateTransportsUnits takes group transportsUnits returns nothing
+        call SaveGroupHandle(transportsHashTable, 1, 1, transportsUnits)
+    endfunction
+
+    private function ClearUnitTransport takes unit whichUnit returns nothing
+        call RemoveSavedHandle(transportersHashTable, GetHandleId(whichUnit), 1)
+    endfunction
+
+    private function UpdateUnitTransport takes unit whichUnit, unit transport returns nothing
+        call SaveUnitHandle(transportersHashTable, GetHandleId(whichUnit), 1, transport)
+    endfunction
+
+    function GetUnitTransport takes unit whichUnit returns unit
+        return LoadUnitHandle(transportersHashTable, 1, 1)
+    endfunction
+
+    function IsUnitAnyTransport takes unit whichUnit returns boolean
+        return GetUnitTransport(whichUnit) != null
+    endfunction
+
+    function GetUnloadedUnit takes nothing returns unit
+        return GetTriggerUnit()
+    endfunction
+
+    function GetUnloadingTransportUnit takes nothing returns unit
+        return GetUnitTransport(GetTriggerUnit())
+    endfunction
+
+    function TriggerConditionUnload takes nothing returns boolean
+        if (GetTriggerEventId() == EVENT_PLAYER_UNIT_DEATH) then
+            return GetUnitTransport(GetTriggerUnit()) != null
+        elseif (GetTriggerEventId() == EVENT_PLAYER_UNIT_ISSUED_ORDER) then
+            if (GetIssuedOrderId() == OrderId("stop")) then
+                // This does not detect unloaded corpses.
+                return not IsUnitLoaded(GetTriggerUnit()) and GetUnitTransport(GetTriggerUnit()) != null //or UnitAlive(GetTriggerUnit())
+            endif
+        endif
+
+        return false
+    endfunction
+
+    function TriggerRegisterUnitUnloadedEvent takes trigger whichTrigger returns nothing
+        call TriggerRegisterAnyUnitEventBJ(whichTrigger, EVENT_PLAYER_UNIT_ISSUED_ORDER)
+        call TriggerRegisterAnyUnitEventBJ(whichTrigger, EVENT_PLAYER_UNIT_DEATH)
+        call TriggerAddCondition(whichTrigger, Condition(function TriggerConditionUnload))
+    endfunction
+
+    private function AddTransportedUnit takes unit transport, unit whichUnit returns nothing
+        local group transportedUnits = GetTransportedUnits(transport)
+        local group transportsUnits = GetTransportsUnits()
+        call GroupAddUnit(transportedUnits, whichUnit)
+        call GroupAddUnit(transportsUnits, transport)
+        call PrintMsg("Adding " + GetUnitName(whichUnit) + " to transport " + GetUnitName(transport) + " resulting in " + I2S(CountUnitsInGroup(transportsUnits)) + " transports units and " + I2S(CountUnitsInGroup(transportedUnits)) + " loaded units for the transport.")
+        call ClearTransportedUnits(transport)
+        call ClearTransportsUnits()
+        call UpdateTransportedUnits(transport, transportedUnits)
+        call UpdateTransportsUnits(transportsUnits)
+        call UpdateUnitTransport(whichUnit, transport)
+        call PrintMsg("Adding " + GetUnitName(whichUnit) + " to transport " + GetUnitName(transport) + " resulting in " + I2S(CountUnitsInGroup(GetTransportsUnits())) + " transports units and " + I2S(CountUnitsInGroup(GetTransportedUnits(transport))) + " loaded units for the transport.")
+    endfunction
+
+    private function RemoveTransportedUnit takes unit transport, unit whichUnit returns nothing
+        local group transportedUnits = GetTransportedUnits(transport)
+        local group transportsUnits = GetTransportsUnits()
+        call GroupRemoveUnit(transportedUnits, whichUnit)
+        // no transport anymore
+        if (CountUnitsInGroup(transportedUnits) == 0) then
+            call GroupRemoveUnit(transportsUnits, whichUnit)
+            call ClearTransportsUnits()
+            call UpdateTransportsUnits(transportsUnits)
+        // only one transported unit less
+        else
+            call ClearTransportedUnits(transport)
+            call UpdateTransportedUnits(transport, transportedUnits)
+        endif
+        call ClearUnitTransport(whichUnit)
+        call PrintMsg("Removing " + GetUnitName(whichUnit) + " from transport " + GetUnitName(transport))
+    endfunction
+
+    function TriggerActionLoad takes nothing returns nothing
+        call PrintMsg("Loading " + GetUnitName(GetLoadedUnit()) + " into " + GetUnitName(GetTransportUnit()))
+        call DisableTrigger(unloadTrigger)
+        call AddTransportedUnit(GetTransportUnit(), GetLoadedUnit())
+        call EnableTrigger(unloadTrigger)
+    endfunction
+
+    function TriggerActionUnload takes nothing returns nothing
+        call RemoveTransportedUnit(GetTriggerUnit(), GetUnloadedUnit())
+    endfunction
+
+    private function Init takes nothing returns nothing
+        call TriggerRegisterAnyUnitEventBJ(loadTrigger, EVENT_PLAYER_UNIT_LOADED)
+        call TriggerAddAction(loadTrigger, function TriggerActionLoad)
+
+        call TriggerRegisterUnitUnloadedEvent(unloadTrigger)
+        call TriggerAddAction(unloadTrigger, function TriggerActionUnload)
+    endfunction
 
 endlibrary
