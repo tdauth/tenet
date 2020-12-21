@@ -1477,21 +1477,25 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerConditionLoad takes nothing returns boolean
         local thistype this = LoadData(GetTriggeringTrigger())
-        return GetLoadedUnit() == this.whichUnit
+        //call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + " with handle ID " + I2S(GetHandleId(GetLoadedUnit())) + " and handle ID of the time object unit " + I2S(GetHandleId(this.getUnit())) + "|r")
+        return GetLoadedUnit() == this.getUnit()
     endmethod
 
     private static method triggerFunctionLoad takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
+        call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
     endmethod
 
     private static method triggerConditionUnload takes nothing returns boolean
         local thistype this = LoadData(GetTriggeringTrigger())
-        return GetUnloadingTransportUnit() == this.whichUnit
+        //call PrintMsg("|cff00ff00Hurray: Unload event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and unloaded unit " + GetUnitName(GetUnloadedUnit()) + " with handle ID " + I2S(GetHandleId(GetUnloadedUnit())) + " and handle ID of the time object unit " + I2S(GetHandleId(this.getUnit())) + "|r")
+        return GetUnloadedUnit() == this.getUnit()
     endmethod
 
     private static method triggerFunctionUnload takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
+        call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
@@ -1558,7 +1562,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
         set this.unloadTrigger = CreateTrigger()
         call TriggerRegisterUnitUnloadedEvent(this.unloadTrigger)
-        call TriggerAddCondition(this.loadTrigger, Condition(function thistype.triggerConditionUnload))
+        call TriggerAddCondition(this.unloadTrigger, Condition(function thistype.triggerConditionUnload))
         call TriggerAddAction(this.unloadTrigger, function thistype.triggerFunctionUnload)
         call SaveData(this.unloadTrigger, this)
 
@@ -3091,6 +3095,14 @@ library Transports initializer Init
     //*
     //*     group - all loaded units;
     //*
+    //* function GetTransportedUnitsCount takes:
+    //*
+    //*    unit whichUnit - the unit which holds loaded units;
+    //*
+    //* returns:
+    //*
+    //*     integer - the number of loaded units;
+    //*
     //* function GetTransportsUnits takes nothing
     //*
     //* returns:
@@ -3168,6 +3180,13 @@ library Transports initializer Init
         endif
     endfunction
 
+    function GetTransportedUnitsCount takes unit whichUnit returns integer
+        local group transportedUnits = GetTransportedUnits(whichUnit)
+        local integer result = CountUnitsInGroup(transportedUnits)
+        call DestroyGroup(transportedUnits)
+        return result
+    endfunction
+
     private function UpdateTransportedUnits takes unit transport, group transportedUnits returns nothing
         call SaveGroupHandle(whichHashTable, GetHandleId(transport), 0, transportedUnits)
     endfunction
@@ -3200,7 +3219,7 @@ library Transports initializer Init
     endfunction
 
     function GetUnitTransport takes unit whichUnit returns unit
-        return LoadUnitHandle(transportersHashTable, 1, 1)
+        return LoadUnitHandle(transportersHashTable, GetHandleId(whichUnit), 1)
     endfunction
 
     function IsUnitAnyTransport takes unit whichUnit returns boolean
@@ -3221,7 +3240,7 @@ library Transports initializer Init
         elseif (GetTriggerEventId() == EVENT_PLAYER_UNIT_ISSUED_ORDER) then
             if (GetIssuedOrderId() == OrderId("stop")) then
                 // This does not detect unloaded corpses.
-                return not IsUnitLoaded(GetTriggerUnit()) and GetUnitTransport(GetTriggerUnit()) != null //or UnitAlive(GetTriggerUnit())
+                return not IsUnitLoaded(GetTriggerUnit()) and GetUnitTransport(GetTriggerUnit()) != null //  or UnitAlive(GetTriggerUnit())
             endif
         endif
 
@@ -3268,9 +3287,7 @@ library Transports initializer Init
 
     function TriggerActionLoad takes nothing returns nothing
         call PrintMsg("Loading " + GetUnitName(GetLoadedUnit()) + " into " + GetUnitName(GetTransportUnit()))
-        call DisableTrigger(unloadTrigger)
         call AddTransportedUnit(GetTransportUnit(), GetLoadedUnit())
-        call EnableTrigger(unloadTrigger)
     endfunction
 
     function TriggerActionUnload takes nothing returns nothing
