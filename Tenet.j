@@ -7,7 +7,7 @@ library MapData
     struct UnitTypes
 
         public static method getWalkAnimationIndex takes integer unitTypeId returns integer
-            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 5
             elseif (unitTypeId == 'z001') then
                 return 2
@@ -17,7 +17,7 @@ library MapData
         endmethod
 
         public static method getAttackAnimationIndex takes integer unitTypeId returns integer
-            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 2
             elseif (unitTypeId == 'z001') then
                 return 3
@@ -27,7 +27,7 @@ library MapData
         endmethod
 
         public static method getDeathAnimationIndex takes integer unitTypeId returns integer
-            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 3
             elseif (unitTypeId == 'z001') then
                 return 4
@@ -45,7 +45,7 @@ library MapData
         endmethod
 
         public static method getWalkAnimationDuration takes integer unitTypeId returns real
-            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 0.833
             elseif (unitTypeId == 'z001') then
                 return 1.0
@@ -55,7 +55,7 @@ library MapData
         endmethod
 
         public static method getAttackAnimationDuration takes integer unitTypeId returns real
-            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 0.867
             elseif (unitTypeId == 'z001') then
                 return 1.0
@@ -65,7 +65,7 @@ library MapData
         endmethod
 
         public static method getDeathAnimationDuration takes integer unitTypeId returns real
-            if (unitTypeId == 'H000' or unitTypeId == 'z000') then
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 1.7
             elseif (unitTypeId == 'z001') then
                 return 2.0
