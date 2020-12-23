@@ -1490,7 +1490,7 @@ struct TimeObjectUnit extends TimeObjectImpl
             //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
             set this.isMoving = true
             call this.startRecordingChanges(globalTime.getTime())
-        elseif (GetIssuedOrderId() == String2OrderIdBJ("stop") or GetIssuedOrderId() == String2OrderIdBJ("halt")) then
+        elseif (GetIssuedOrderId() == String2OrderIdBJ("stop") or GetIssuedOrderId() == String2OrderIdBJ("halt") or GetIssuedOrderId() == String2OrderIdBJ("holdposition")) then
             //call PrintMsg("Stop order for unit: " + GetUnitName(this.whichUnit))
             call this.stopRecordingChanges(globalTime.getTime())
             set this.isMoving = false
