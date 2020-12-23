@@ -765,7 +765,7 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
     endmethod
 
@@ -781,7 +781,7 @@ struct ChangeEventUnitUnloaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("|cff00ff00Hurray: Restore unloaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore unloaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call IssueTargetOrderBJ(transporter, "load", this.getUnit())
     endmethod
 
@@ -802,7 +802,7 @@ struct ChangeEventUnitConstructionProgress extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("|cff00ff00Hurray: Restore construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
         call UnitSetConstructionProgress(this.getUnit(), progress)
     endmethod
 
@@ -925,7 +925,7 @@ struct ChangeEventDestructableAlive extends ChangeEventDestructable
 
     public stub method restore takes nothing returns nothing
         // TODO not max life but the life before dying!
-        call PrintMsg("Hurray: Ressurect " + GetDestructableName(this.getDestructable()))
+        //call PrintMsg("Hurray: Ressurect " + GetDestructableName(this.getDestructable()))
         call KillDestructable(this.getDestructable())
     endmethod
 
@@ -937,7 +937,7 @@ struct ChangeEventDestructableDead extends ChangeEventDestructable
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("Hurray: Kill " + GetDestructableName(this.getDestructable()))
+        //call PrintMsg("Hurray: Kill " + GetDestructableName(this.getDestructable()))
         call DestructableRestoreLife(this.getDestructable(), GetDestructableMaxLife(this.getDestructable()), true)
     endmethod
 
@@ -1563,7 +1563,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionLoad takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
     endmethod
 
@@ -1575,7 +1575,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionUnload takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
@@ -1588,11 +1588,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.isBeingConstructed = true
         set this.constructionStartTime = globalTime.getTime()
         call this.startRecordingChanges(globalTime.getTime())
-        call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
     endmethod
 
     public method cancelConstruction takes nothing returns nothing
-        call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
         call this.stopRecordingChanges(globalTime.getTime())
         set this.isBeingConstructed = false
     endmethod
@@ -1955,7 +1955,7 @@ struct TimeImpl extends Time
 
     public stub method addObject takes TimeObject timeObject returns integer
         if (this.getObjectsSize() >= thistype.MAX_TIME_OBJECTS) then
-            call PrintMsg("Adding a time object when reached maximum of time objects with " + I2S(this.getObjectsSize()) + " when adding time object " + timeObject.getName())
+            //call PrintMsg("Adding a time object when reached maximum of time objects with " + I2S(this.getObjectsSize()) + " when adding time object " + timeObject.getName())
         endif
 
         if (timeObject.isInverted()) then
@@ -2212,7 +2212,7 @@ struct TimeImpl extends Time
             endif
             call this.setTimeRestoringOnly(i)
             call PolledWait(delayPerTick)
-            call PrintMsg("After tick")
+            //call PrintMsg("After tick")
         endloop
         call PrintMsg("Resume time!")
         // TODO Unpause all units etc.
@@ -3413,13 +3413,13 @@ library Transports initializer Init
         local group transportsUnits = GetTransportsUnits()
         call GroupAddUnit(transportedUnits, whichUnit)
         call GroupAddUnit(transportsUnits, transport)
-        call PrintMsg("Adding " + GetUnitName(whichUnit) + " to transport " + GetUnitName(transport) + " resulting in " + I2S(CountUnitsInGroup(transportsUnits)) + " transports units and " + I2S(CountUnitsInGroup(transportedUnits)) + " loaded units for the transport.")
+        //call PrintMsg("Adding " + GetUnitName(whichUnit) + " to transport " + GetUnitName(transport) + " resulting in " + I2S(CountUnitsInGroup(transportsUnits)) + " transports units and " + I2S(CountUnitsInGroup(transportedUnits)) + " loaded units for the transport.")
         call ClearTransportedUnits(transport)
         call ClearTransportsUnits()
         call UpdateTransportedUnits(transport, transportedUnits)
         call UpdateTransportsUnits(transportsUnits)
         call UpdateUnitTransport(whichUnit, transport)
-        call PrintMsg("Adding " + GetUnitName(whichUnit) + " to transport " + GetUnitName(transport) + " resulting in " + I2S(CountUnitsInGroup(GetTransportsUnits())) + " transports units and " + I2S(CountUnitsInGroup(GetTransportedUnits(transport))) + " loaded units for the transport.")
+        //call PrintMsg("Adding " + GetUnitName(whichUnit) + " to transport " + GetUnitName(transport) + " resulting in " + I2S(CountUnitsInGroup(GetTransportsUnits())) + " transports units and " + I2S(CountUnitsInGroup(GetTransportedUnits(transport))) + " loaded units for the transport.")
     endfunction
 
     private function RemoveTransportedUnit takes unit transport, unit whichUnit returns nothing
@@ -3437,11 +3437,11 @@ library Transports initializer Init
             call UpdateTransportedUnits(transport, transportedUnits)
         endif
         call ClearUnitTransport(whichUnit)
-        call PrintMsg("Removing " + GetUnitName(whichUnit) + " from transport " + GetUnitName(transport))
+        //call PrintMsg("Removing " + GetUnitName(whichUnit) + " from transport " + GetUnitName(transport))
     endfunction
 
     function TriggerActionLoad takes nothing returns nothing
-        call PrintMsg("Loading " + GetUnitName(GetLoadedUnit()) + " into " + GetUnitName(GetTransportUnit()))
+        //call PrintMsg("Loading " + GetUnitName(GetLoadedUnit()) + " into " + GetUnitName(GetTransportUnit()))
         call AddTransportedUnit(GetTransportUnit(), GetLoadedUnit())
     endfunction
 
