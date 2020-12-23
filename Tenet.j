@@ -225,6 +225,9 @@ interface TimeObject
     public method recordChanges takes integer time returns nothing
     public method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
 
+    // changes the inverted flag which might stop recording changes etc.
+    public method setInverted takes boolean inverted, integer time returns nothing
+
     // helper methods
 
     /**
@@ -1016,7 +1019,7 @@ struct TimeFrameImpl extends TimeFrame
             // The head element is excluded from traverseBackwards
             call this.changeEventsHead.onTraverse(this.changeEventsHead)
         else
-            call PrintMsg("Restore events with size: 0")
+            //call PrintMsg("Restore events with size: 0")
         endif
     endmethod
 
@@ -1215,6 +1218,12 @@ struct TimeObjectImpl extends TimeObject
         set timeFrame = this.getTimeLine().addTimeFrame(timeDeltaFromStartFrame)
         call changeEvent.onChange(time)
         call timeFrame.addChangeEvent(changeEvent)
+    endmethod
+
+    public stub method setInverted takes boolean inverted, integer time returns nothing
+        set this.inverted = inverted
+        call this.stopRecordingChanges(time)
+        // TODO Stop recoridng etc.
     endmethod
 
     public stub method addTwoChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
@@ -2234,6 +2243,52 @@ struct TimeImpl extends Time
         set this.whichTimer = null
     endmethod
 endstruct
+
+private function CopyGroup takes group whichGroup returns group
+    local group copy = CreateGroup()
+    call GroupAddGroup(whichGroup, copy)
+    return copy
+endfunction
+
+function FilterForInverted takes group whichGroup returns group
+    local group result = CreateGroup()
+    local group copy = CopyGroup(whichGroup)
+    local TimeObjectUnit timeObjectUnit = 0
+    local unit first = null
+    loop
+        set first = FirstOfGroup(copy)
+        exitwhen (first == null)
+        set timeObjectUnit = TimeObjectUnit.fromUnit(first)
+        if (timeObjectUnit != 0 and timeObjectUnit.isInverted()) then
+            call GroupAddUnit(result, first)
+        endif
+    endloop
+
+    call DestroyGroup(copy)
+    set copy = null
+
+    return result
+endfunction
+
+function FilterForNonInverted takes group whichGroup returns group
+    local group result = CreateGroup()
+    local group copy = CopyGroup(whichGroup)
+    local TimeObjectUnit timeObjectUnit = 0
+    local unit first = null
+    loop
+        set first = FirstOfGroup(copy)
+        exitwhen (first == null)
+        set timeObjectUnit = TimeObjectUnit.fromUnit(first)
+        if (timeObjectUnit != 0 and not timeObjectUnit.isInverted()) then
+            call GroupAddUnit(result, first)
+        endif
+    endloop
+
+    call DestroyGroup(copy)
+    set copy = null
+
+    return result
+endfunction
 
 globals
     Time globalTime = 0
