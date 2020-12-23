@@ -36,6 +36,14 @@ library MapData
             return 0
         endmethod
 
+        public static method getRepairAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'h005') then
+                return 3
+            endif
+
+            return 0
+        endmethod
+
         public static method getWalkAnimationDuration takes integer unitTypeId returns real
             if (unitTypeId == 'H000' or unitTypeId == 'z000') then
                 return 0.833
@@ -64,6 +72,30 @@ library MapData
             endif
 
             return 0.0
+        endmethod
+
+        public static method getRepairAnimationDuration takes integer unitTypeId returns real
+            if (unitTypeId == 'h005') then
+                return 1.7
+            endif
+
+            return 0.0
+        endmethod
+
+        public static method getConstructionTime takes integer unitTypeId returns integer
+            if (unitTypeId == 'h001') then
+                return 60
+            elseif (unitTypeId == 'h00E') then
+                return 50
+            elseif (unitTypeId == 'h00F') then
+                return 50
+            elseif (unitTypeId == 'h00G') then
+                return 50
+            elseif (unitTypeId == 'n002') then
+                return 50
+            endif
+
+            return 0
         endmethod
 
     endstruct
@@ -433,7 +465,7 @@ struct ChangeEventUnitFacing extends ChangeEventUnit
 endstruct
 
 struct ChangeEventUnitAnimation extends ChangeEventUnit
-    private TimeObject timeObjectUnit
+    private TimeObjectUnit timeObjectUnit
     private integer animationIndex
     private real animationDuration
     private real offset
@@ -756,6 +788,27 @@ struct ChangeEventUnitUnloaded extends ChangeEventUnit
     public static method create takes unit unloadedUnit, unit transporter returns thistype
         local thistype this = thistype.allocate(unloadedUnit)
         set this.transporter = transporter
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitConstructionProgress extends ChangeEventUnit
+    private integer startTime
+    private integer progress
+
+    public stub method onChange takes integer time returns nothing
+        set this.progress = IMaxBJ(1, (UnitTypes.getConstructionTime(GetUnitTypeId(this.getUnit())) - startTime - time) * 100 / UnitTypes.getConstructionTime(GetUnitTypeId(this.getUnit())))
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        call PrintMsg("|cff00ff00Hurray: Restore construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
+        call UnitSetConstructionProgress(this.getUnit(), progress)
+    endmethod
+
+    public static method create takes unit whichUnit, integer startTime returns thistype
+        local thistype this = thistype.allocate(whichUnit)
+        set this.startTime = startTime
         return this
     endmethod
 
@@ -1268,6 +1321,10 @@ endstruct
 
 struct TimeObjectUnit extends TimeObjectImpl
     private unit whichUnit
+    private boolean isMoving
+    private boolean isRepairing
+    private boolean isBeingConstructed
+    private integer constructionStartTime
     private trigger orderTrigger
     private trigger pickupTrigger
     private trigger dropTrigger
@@ -1280,6 +1337,9 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger acquireTargetTrigger
     private trigger loadTrigger
     private trigger unloadTrigger
+    private trigger beginConstructionTrigger
+    private trigger cancelConstructionTrigger
+    private trigger finishConstructionTrigger
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
@@ -1297,13 +1357,24 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public stub method recordChanges takes integer time returns nothing
         //call PrintMsg("recordChanges for unit (position and facing and animation): " + GetUnitName(whichUnit))
-        call this.addChangeEvent(time, ChangeEventUnitPosition.create(whichUnit))
-        call this.addChangeEvent(time, ChangeEventUnitFacing.create(whichUnit))
-        // TODO Add the current animation (detected by the order like "move" or "attack" etc.)
-        // TODO Store unit animations for orders based on unit type IDs!
-        // GetUnitCurrentOrder(this.whichUnit) == String2OrderIdBJ("none")
-        // walk animation
-        call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getWalkAnimationIndex(GetUnitTypeId(this.whichUnit)), UnitTypes.getWalkAnimationDuration(GetUnitTypeId(this.whichUnit))))
+        if (isMoving) then
+            call this.addChangeEvent(time, ChangeEventUnitPosition.create(whichUnit))
+            call this.addChangeEvent(time, ChangeEventUnitFacing.create(whichUnit))
+            // TODO Add the current animation (detected by the order like "move" or "attack" etc.)
+            // TODO Store unit animations for orders based on unit type IDs!
+            // GetUnitCurrentOrder(this.whichUnit) == String2OrderIdBJ("none")
+            // walk animation
+            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getWalkAnimationIndex(GetUnitTypeId(this.whichUnit)), UnitTypes.getWalkAnimationDuration(GetUnitTypeId(this.whichUnit))))
+        endif
+
+        if (isRepairing) then
+            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getRepairAnimationIndex(GetUnitTypeId(this.whichUnit)), UnitTypes.getRepairAnimationDuration(GetUnitTypeId(this.whichUnit))))
+        endif
+
+        if (isBeingConstructed) then
+            call PrintMsg("Add construction change event " + GetUnitName(this.getUnit()))
+            call this.addChangeEvent(time, ChangeEventUnitConstructionProgress.create(whichUnit, constructionStartTime))
+        endif
     endmethod
 
     public stub method onRestore takes integer time returns nothing
@@ -1408,10 +1479,16 @@ struct TimeObjectUnit extends TimeObjectImpl
         //call PrintMsg("Order for unit: " + GetUnitName(this.whichUnit) + " with time object " + I2S(this))
         if (GetIssuedOrderId() == String2OrderIdBJ("move") or GetIssuedOrderId() == String2OrderIdBJ("smart")) then
             //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
+            set this.isMoving = true
             call this.startRecordingChanges(globalTime.getTime())
         elseif (GetIssuedOrderId() == String2OrderIdBJ("stop") or GetIssuedOrderId() == String2OrderIdBJ("halt")) then
             //call PrintMsg("Stop order for unit: " + GetUnitName(this.whichUnit))
             call this.stopRecordingChanges(globalTime.getTime())
+            set this.isMoving = false
+            set this.isRepairing = false
+        elseif (GetIssuedOrderId() == String2OrderIdBJ("repair")) then
+            set this.isRepairing = true
+            call this.startRecordingChanges(globalTime.getTime())
         endif
     endmethod
 
@@ -1441,6 +1518,9 @@ struct TimeObjectUnit extends TimeObjectImpl
         local ChangeEvent changeEventUnitDead = ChangeEventUnitDead.create(whichUnit)
         local ChangeEvent changeEventUnitAnimation = ChangeEventUnitAnimation.create(this, UnitTypes.getDeathAnimationIndex(GetUnitTypeId(GetTriggerUnit())), UnitTypes.getDeathAnimationDuration(GetUnitTypeId(GetTriggerUnit())))
         call this.addThreeChangeEventsNextToEachOther(globalTime.getTime(), changeEventUnitAlive, changeEventUnitDead, changeEventUnitAnimation)
+
+        // guard makes sure that the construction progress is not continued
+        call this.cancelConstruction()
     endmethod
 
     private static method triggerFunctionDamage takes nothing returns nothing
@@ -1499,13 +1579,60 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
+    private static method triggerConditionBeginConstruction takes nothing returns boolean
+        local thistype this = LoadData(GetTriggeringTrigger())
+        return GetConstructingStructure() == this.getUnit()
+    endmethod
+
+    public method beginConstruction takes nothing returns nothing
+        set this.isBeingConstructed = true
+        set this.constructionStartTime = globalTime.getTime()
+        call this.startRecordingChanges(globalTime.getTime())
+        call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
+    endmethod
+
+    public method cancelConstruction takes nothing returns nothing
+        call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
+        call this.stopRecordingChanges(globalTime.getTime())
+        set this.isBeingConstructed = false
+    endmethod
+
+    private static method triggerFunctionBeginConstruction takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.beginConstruction()
+    endmethod
+
+    private static method triggerConditionCancelConstruction takes nothing returns boolean
+        local thistype this = LoadData(GetTriggeringTrigger())
+        return GetCancelledStructure() == this.getUnit()
+    endmethod
+
+    private static method triggerFunctionCancelConstruction takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.cancelConstruction()
+    endmethod
+
+    private static method triggerConditionFinishConstruction takes nothing returns boolean
+        local thistype this = LoadData(GetTriggeringTrigger())
+        return GetConstructedStructure() == this.getUnit()
+    endmethod
+
+    private static method triggerFunctionFinishConstruction takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.cancelConstruction()
+    endmethod
+
     public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
         set this.whichUnit = whichUnit
+        set this.isMoving = false
+        set this.isRepairing = false
+        set this.isBeingConstructed = false
 
         set this.orderTrigger = CreateTrigger()
         call TriggerRegisterUnitEvent(this.orderTrigger, whichUnit, EVENT_UNIT_ISSUED_POINT_ORDER)
         call TriggerRegisterUnitEvent(this.orderTrigger, whichUnit, EVENT_UNIT_ISSUED_ORDER)
+        call TriggerRegisterUnitEvent(this.orderTrigger, whichUnit, EVENT_UNIT_ISSUED_TARGET_ORDER)
         call TriggerAddAction(this.orderTrigger, function thistype.triggerFunctionOrder)
         call SaveData(this.orderTrigger, this)
 
@@ -1566,6 +1693,24 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.unloadTrigger, function thistype.triggerFunctionUnload)
         call SaveData(this.unloadTrigger, this)
 
+        set this.beginConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(this.beginConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_START)
+        call TriggerAddCondition(this.beginConstructionTrigger, Condition(function thistype.triggerConditionBeginConstruction))
+        call TriggerAddAction(this.beginConstructionTrigger, function thistype.triggerFunctionBeginConstruction)
+        call SaveData(this.beginConstructionTrigger, this)
+
+        set this.cancelConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(this.cancelConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_CANCEL)
+        call TriggerAddCondition(this.cancelConstructionTrigger, Condition(function thistype.triggerConditionCancelConstruction))
+        call TriggerAddAction(this.cancelConstructionTrigger, function thistype.triggerFunctionCancelConstruction)
+        call SaveData(this.cancelConstructionTrigger, this)
+
+        set this.finishConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(this.finishConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_FINISH)
+        call TriggerAddCondition(this.finishConstructionTrigger, Condition(function thistype.triggerConditionFinishConstruction))
+        call TriggerAddAction(this.finishConstructionTrigger, function thistype.triggerFunctionFinishConstruction)
+        call SaveData(this.finishConstructionTrigger, this)
+
         call SaveData(this.whichUnit, this)
 
         return this
@@ -1623,6 +1768,18 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.unloadTrigger)
         call DestroyTrigger(this.unloadTrigger)
         set this.unloadTrigger = null
+
+        call FlushData(this.beginConstructionTrigger)
+        call DestroyTrigger(this.beginConstructionTrigger)
+        set this.beginConstructionTrigger = null
+
+        call FlushData(this.cancelConstructionTrigger)
+        call DestroyTrigger(this.cancelConstructionTrigger)
+        set this.cancelConstructionTrigger = null
+
+        call FlushData(this.finishConstructionTrigger)
+        call DestroyTrigger(this.finishConstructionTrigger)
+        set this.finishConstructionTrigger = null
     endmethod
 
     public static method fromUnit takes unit whichUnit returns thistype
@@ -3159,9 +3316,7 @@ library Transports initializer Init
 
     private function CopyGroup takes group whichGroup returns group
         local group copy = CreateGroup()
-        call PrintMsg("Size of the loaded group: " + I2S(CountUnitsInGroup(whichGroup)))
         call GroupAddGroup(whichGroup, copy)
-        call PrintMsg("Size of the copy group: " + I2S(CountUnitsInGroup(copy)))
         return copy
     endfunction
 
@@ -3234,7 +3389,7 @@ library Transports initializer Init
         return GetUnitTransport(GetTriggerUnit())
     endfunction
 
-    function TriggerConditionUnload takes nothing returns boolean
+    private function TriggerConditionUnload takes nothing returns boolean
         if (GetTriggerEventId() == EVENT_PLAYER_UNIT_DEATH) then
             return GetUnitTransport(GetTriggerUnit()) != null
         elseif (GetTriggerEventId() == EVENT_PLAYER_UNIT_ISSUED_ORDER) then
