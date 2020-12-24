@@ -98,6 +98,13 @@ library MapData
             return 0
         endmethod
 
+        public static method getDeathSoundInverted takes integer unitTypeId returns sound
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
+                return gg_snd_FootmanDeathInverted
+            endif
+            return null
+        endmethod
+
     endstruct
 
     struct Destructables
@@ -678,9 +685,17 @@ struct ChangeEventUnitDead extends ChangeEventUnit
         call DestroyTimer(whichTimer)
     endmethod
 
+    private static method playDeathAnimationReverse takes unit whichUnit returns nothing
+        call SetUnitAnimationReverse(whichUnit, UnitTypes.getDeathAnimationIndex(GetUnitTypeId(whichUnit)), 0.0, 1.0, true)
+        if (UnitTypes.getDeathSoundInverted(GetUnitTypeId(whichUnit)) != null) then
+            call PlaySoundOnUnitBJ(UnitTypes.getDeathSoundInverted(GetUnitTypeId(whichUnit)), 100, whichUnit)
+        endif
+    endmethod
+
     private static method timerFunctionReviveHero takes nothing returns nothing
         local unit hero = LoadUnit(GetExpiredTimer())
         call ReviveHero(hero, GetUnitX(hero), GetUnitY(hero), false)
+        call thistype.playDeathAnimationReverse(hero)
         set hero = null
         call thistype.flushTimer(GetExpiredTimer())
     endmethod
@@ -703,6 +718,7 @@ struct ChangeEventUnitDead extends ChangeEventUnit
             call UnitAddAbility(caster, 'Aloc')
             call ShowUnitHide(caster)
             call IssueImmediateOrderBJ(caster, "resurrection")
+            call thistype.playDeathAnimationReverse(this.getUnit())
             call thistype.startTimer(caster, 2.0, function thistype.timerFunctionRemoveCaster)
         endif
     endmethod
@@ -3363,6 +3379,9 @@ library Transports initializer Init
         hashtable transportersHashTable = InitHashtable()
         trigger loadTrigger = CreateTrigger()
         trigger unloadTrigger = CreateTrigger()
+        trigger array unloadTriggers[1000]
+        integer unloadTriggersSize = 0
+        hashtable unloadTriggersHashTable = InitHashtable()
     endglobals
 
     private function PrintMsg takes string msg returns nothing
@@ -3437,11 +3456,11 @@ library Transports initializer Init
     endfunction
 
     function GetUnloadedUnit takes nothing returns unit
-        return GetTriggerUnit()
+        return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), 0)
     endfunction
 
     function GetUnloadingTransportUnit takes nothing returns unit
-        return GetUnitTransport(GetTriggerUnit())
+        return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), 1)
     endfunction
 
     private function TriggerConditionUnload takes nothing returns boolean
@@ -3458,9 +3477,8 @@ library Transports initializer Init
     endfunction
 
     function TriggerRegisterUnitUnloadedEvent takes trigger whichTrigger returns nothing
-        call TriggerRegisterAnyUnitEventBJ(whichTrigger, EVENT_PLAYER_UNIT_ISSUED_ORDER)
-        call TriggerRegisterAnyUnitEventBJ(whichTrigger, EVENT_PLAYER_UNIT_DEATH)
-        call TriggerAddCondition(whichTrigger, Condition(function TriggerConditionUnload))
+        set unloadTriggers[unloadTriggersSize] = whichTrigger
+        set unloadTriggersSize = unloadTriggersSize + 1
     endfunction
 
     private function AddTransportedUnit takes unit transport, unit whichUnit returns nothing
@@ -3481,6 +3499,7 @@ library Transports initializer Init
         local group transportedUnits = GetTransportedUnits(transport)
         local group transportsUnits = GetTransportsUnits()
         call GroupRemoveUnit(transportedUnits, whichUnit)
+        call ClearTransportedUnits(transport)
         // no transport anymore
         if (CountUnitsInGroup(transportedUnits) == 0) then
             call GroupRemoveUnit(transportsUnits, whichUnit)
@@ -3488,7 +3507,6 @@ library Transports initializer Init
             call UpdateTransportsUnits(transportsUnits)
         // only one transported unit less
         else
-            call ClearTransportedUnits(transport)
             call UpdateTransportedUnits(transport, transportedUnits)
         endif
         call ClearUnitTransport(whichUnit)
@@ -3501,14 +3519,28 @@ library Transports initializer Init
     endfunction
 
     function TriggerActionUnload takes nothing returns nothing
-        call RemoveTransportedUnit(GetTriggerUnit(), GetUnloadedUnit())
+        local unit unloadedUnit = GetTriggerUnit()
+        local unit transportUnit = GetUnitTransport(unloadedUnit)
+        local integer i = 0
+        call RemoveTransportedUnit(transportUnit, unloadedUnit)
+
+        set i = 0
+        loop
+            exitwhen (i == unloadTriggersSize)
+            call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), 0, unloadedUnit)
+            call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), 1, transportUnit)
+            call TriggerExecute(unloadTriggers[i])
+            set i = i + 1
+        endloop
     endfunction
 
     private function Init takes nothing returns nothing
         call TriggerRegisterAnyUnitEventBJ(loadTrigger, EVENT_PLAYER_UNIT_LOADED)
         call TriggerAddAction(loadTrigger, function TriggerActionLoad)
 
-        call TriggerRegisterUnitUnloadedEvent(unloadTrigger)
+        call TriggerRegisterAnyUnitEventBJ(unloadTrigger, EVENT_PLAYER_UNIT_ISSUED_ORDER)
+        call TriggerRegisterAnyUnitEventBJ(unloadTrigger, EVENT_PLAYER_UNIT_DEATH)
+        call TriggerAddCondition(unloadTrigger, Condition(function TriggerConditionUnload))
         call TriggerAddAction(unloadTrigger, function TriggerActionUnload)
     endfunction
 
