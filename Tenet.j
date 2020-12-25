@@ -183,7 +183,7 @@ endlibrary
 library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit
 
 globals
-    constant real TIMER_PERIODIC_INTERVAL = 0.10
+    constant real TIMER_PERIODIC_INTERVAL = 0.05
 endglobals
 
 interface ChangeEvent
@@ -233,7 +233,7 @@ interface TimeObject
     public method addChangeEvent takes integer time, ChangeEvent changeEvent returns nothing
 
     // changes the inverted flag which might stop recording changes etc.
-    public method setInverted takes boolean inverted, integer time returns nothing
+    public method setInverted takes boolean inverted, integer time, Time whichTime returns nothing
 
     // helper methods
 
@@ -281,7 +281,10 @@ interface Time
     public method addUnit takes boolean inverted, unit whichUnit returns TimeObject
     public method addItem takes boolean inverted, item whichItem returns TimeObject
     public method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
-    public method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
+    /**
+     * Returns a group since the unit might contain transported units which will be inverted as well.
+     */
+    public method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns group
 
 
     // helper methods
@@ -1236,10 +1239,22 @@ struct TimeObjectImpl extends TimeObject
         call timeFrame.addChangeEvent(changeEvent)
     endmethod
 
-    public stub method setInverted takes boolean inverted, integer time returns nothing
+    public stub method setInverted takes boolean inverted, integer time, Time whichTime returns nothing
+        if (this.inverted == inverted) then
+            return
+        endif
+
         set this.inverted = inverted
-        call this.stopRecordingChanges(time)
-        // TODO Stop recoridng etc.
+
+        // flush all changes from now
+        if (this.isInverted() == whichTime.isInverted()) then
+            call this.getTimeLine().flushAllFrom(time)
+        // stop recording changes and restore if possible
+        else
+            call this.onInitialInvert(inverted)
+            call this.stopRecordingChanges(time)
+            call this.getTimeLine().restore(this, time)
+        endif
     endmethod
 
     public stub method addTwoChangeEventsNextToEachOther takes integer time, ChangeEvent eventAfter, ChangeEvent initialEvent returns nothing
@@ -1365,6 +1380,21 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger beginConstructionTrigger
     private trigger cancelConstructionTrigger
     private trigger finishConstructionTrigger
+    // TODO Restore reverse "Stand Work" animations.
+    private trigger beginResearchTrigger
+    private trigger cancelResearchTrigger
+    private trigger finishResearchTrigger
+    private trigger beginUpgradeTrigger
+    private trigger cancelUpgradeTrigger
+    private trigger finishUpgradeTrigger
+    private trigger beginTrainingTrigger
+    private trigger cancelTrainingTrigger
+    // TODO Add all trained units as objects to the map.
+    private trigger finishTrainingTrigger
+    private trigger beginRevivingTrigger
+    private trigger cancelRevivingTrigger
+    // TODO Add all trained units as objects to the map.
+    private trigger finishRevivingTrigger
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
@@ -1404,10 +1434,12 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public stub method onRestore takes integer time returns nothing
         call IssueImmediateOrderBJ(this.whichUnit, "stop")
+        call IssueImmediateOrderBJ(this.whichUnit, "halt")
     endmethod
 
     public stub method onInitialInvert takes boolean globalTimeInverted returns nothing
         call IssueImmediateOrderBJ(this.whichUnit, "stop")
+        call IssueImmediateOrderBJ(this.whichUnit, "halt")
     endmethod
 
     public method getUnit takes nothing returns unit
@@ -1964,16 +1996,7 @@ struct TimeImpl extends Time
         loop
             exitwhen (i == this.getObjectsSize())
             set timeObject = this.timeObjects[i]
-            set timeLine = timeObject.getTimeLine()
-            // flush all changes from now
-            if (this.isInverted() == timeObject.isInverted()) then
-                call timeLine.flushAllFrom(this.getTime())
-            // stop recording changes and restore if possible
-            else
-                call timeObject.onInitialInvert(inverted)
-                call timeObject.stopRecordingChanges(this.getTime())
-                call timeLine.restore(timeObject, time)
-            endif
+            call timeObject.setInverted(inverted, this.getTime(), this)
             set i = i + 1
         endloop
     endmethod
@@ -2066,20 +2089,29 @@ struct TimeImpl extends Time
         return result
     endmethod
 
-    public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns unit
-        local unit copy = CopyUnit(owner, whichUnit, x, y, facing)
+    public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns group
+        local group copy = CopyUnit(owner, whichUnit, x, y, facing)
+        local group result = CreateGroup()
+        local unit first = null
         local integer i = 0
         loop
             exitwhen (i == GetPlayers())
             if (GetPlayerAlliance(Player(i), owner, ALLIANCE_SHARED_ADVANCED_CONTROL) or Player(i) == owner) then
-                call SelectUnitAddForPlayer(copy, Player(i))
+                call SelectGroupForPlayerBJ(copy, Player(i))
             endif
             set i = i + 1
         endloop
 
-        call this.addUnit(inverted, copy)
+        loop
+            set first = FirstOfGroup(copy)
+            exitwhen (first == null)
+            call GroupAddUnit(result, TimeObjectUnit(this.addUnit(inverted, first)).getUnit())
+            call GroupRemoveUnit(copy, first)
+        endloop
 
-        return copy
+        call DestroyGroup(copy)
+
+        return result
     endmethod
 
     private method addGroupCopies takes boolean inverted, player owner, group whichGroup, real x, real y, real facing returns nothing
@@ -2278,6 +2310,7 @@ function FilterForInverted takes group whichGroup returns group
         if (timeObjectUnit != 0 and timeObjectUnit.isInverted()) then
             call GroupAddUnit(result, first)
         endif
+        call GroupRemoveUnit(copy, first)
     endloop
 
     call DestroyGroup(copy)
@@ -2298,6 +2331,7 @@ function FilterForNonInverted takes group whichGroup returns group
         if (timeObjectUnit != 0 and not timeObjectUnit.isInverted()) then
             call GroupAddUnit(result, first)
         endif
+        call GroupRemoveUnit(copy, first)
     endloop
 
     call DestroyGroup(copy)
@@ -3276,15 +3310,17 @@ library CopyUnit requires Transports
         return copy
     endfunction
 
-    function CopyUnit takes player owner, unit whichUnit, real x, real y, real facing returns unit
-        local unit result = CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing)
+    function CopyUnit takes player owner, unit whichUnit, real x, real y, real facing returns group
+        local group result = CreateGroup()
         local group transportedUnits = GetTransportedUnits(whichUnit)
         local group transportedUnitsCopy = CopyGroup(transportedUnits)
         local unit first = null
+        call GroupAddUnit(result, CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing))
         loop
             set first = FirstOfGroup(transportedUnitsCopy)
             exitwhen (first == null)
-            call CopyUnit(owner, first, x, y, facing) // TODO return as group
+            call GroupAddGroup(result, CopyUnit(owner, first, x, y, facing))
+            call GroupRemoveUnit(transportedUnitsCopy, first)
         endloop
 
         call DestroyGroup(transportedUnitsCopy)
