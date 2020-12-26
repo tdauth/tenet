@@ -1,3 +1,109 @@
+/**
+ * Map-specific time objects and change events.
+ */
+library MapEvents initializer Init requires Tenet
+
+    struct TimeObjectTurnstileMachine extends TimeObjectImpl
+
+        public stub method getName takes nothing returns string
+            return "Turnstile Machine"
+        endmethod
+
+    endstruct
+
+    struct ChangeEventConquerTurnstileMachine extends ChangeEventImpl
+        private sound invertedConquerSound
+        private unit circleOfPower
+        private player ownerBefore
+        private player ownerAfter
+
+        public stub method onChange takes integer time returns nothing
+        endmethod
+
+        public stub method restore takes nothing returns nothing
+            call SetUnitOwner(circleOfPower, ownerBefore, true)
+            call PlaySoundBJ(invertedConquerSound)
+            if (IsPlayerInForce(ownerAfter, udg_GoodGuys)) then
+                call DisplayTextToForce(GetPlayersAll(), ReverseString("TRIGSTR_283"))
+            else
+                call DisplayTextToForce(GetPlayersAll(), ReverseString("TRIGSTR_284"))
+            endif
+        endmethod
+
+    public static method create takes sound invertedConquerSound, unit circleOfPower, player ownerBefore, player ownerAfter returns thistype
+        local thistype this = thistype.allocate()
+        set this.invertedConquerSound = invertedConquerSound
+        set this.circleOfPower = circleOfPower
+        set this.ownerBefore = ownerBefore
+        set this.ownerAfter = ownerAfter
+
+        return this
+    endmethod
+
+    endstruct
+
+    struct TimeObjectTrain extends TimeObjectImpl
+
+        public stub method getName takes nothing returns string
+            return "Train"
+        endmethod
+
+    endstruct
+
+    struct ChangeEventSpeedUpTrain extends ChangeEventImpl
+
+        public stub method onChange takes integer time returns nothing
+        endmethod
+
+        public stub method restore takes nothing returns nothing
+        endmethod
+
+    endstruct
+
+    struct ChangeEventSlowDownTrain extends ChangeEventImpl
+
+        public stub method onChange takes integer time returns nothing
+        endmethod
+
+        public stub method restore takes nothing returns nothing
+        endmethod
+
+    endstruct
+
+    struct ChangeEventStartTrain extends ChangeEventImpl
+
+        public stub method onChange takes integer time returns nothing
+        endmethod
+
+        public stub method restore takes nothing returns nothing
+        endmethod
+
+    endstruct
+
+    struct ChangeEventStopTrain extends ChangeEventImpl
+
+        public stub method onChange takes integer time returns nothing
+        endmethod
+
+        public stub method restore takes nothing returns nothing
+        endmethod
+
+    endstruct
+
+    globals
+        TimeObjectTurnstileMachine turnstileMachine = 0
+        TimeObjectTrain train = 0
+    endglobals
+
+    private function Init takes nothing returns nothing
+        set turnstileMachine = TimeObjectTurnstileMachine.create(0, false)
+        set train = TimeObjectTrain.create(0, false)
+        call globalTime.addObject(turnstileMachine)
+        call globalTime.addObject(train)
+    endfunction
+
+endlibrary
+
 library MapData
 
     globals
@@ -181,6 +287,17 @@ endfunction
 endlibrary
 
 library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit
+
+function ReverseString takes string whichString returns string
+    local string result = ""
+    local integer i = StringLength(whichString)
+    loop
+        exitwhen (i <= 0)
+        set result = result + SubString(whichString, i - 1, i)
+        set i = i - 1
+    endloop
+    return result
+endfunction
 
 globals
     constant real TIMER_PERIODIC_INTERVAL = 0.05
@@ -1241,6 +1358,7 @@ struct TimeObjectImpl extends TimeObject
 
     public stub method setInverted takes boolean inverted, integer time, Time whichTime returns nothing
         if (this.inverted == inverted) then
+            call PrintMsg("Trying to invert already inverted unit " + this.getName())
             return
         endif
 
@@ -1996,7 +2114,15 @@ struct TimeImpl extends Time
         loop
             exitwhen (i == this.getObjectsSize())
             set timeObject = this.timeObjects[i]
-            call timeObject.setInverted(inverted, this.getTime(), this)
+            // flush all changes from now
+            if (timeObject.isInverted() == this.isInverted()) then
+                call timeObject.getTimeLine().flushAllFrom(time)
+            // stop recording changes and restore if possible
+            else
+                call timeObject.onInitialInvert(inverted)
+                call timeObject.stopRecordingChanges(time)
+                call timeObject.getTimeLine().restore(this, time)
+            endif
             set i = i + 1
         endloop
     endmethod
@@ -2329,6 +2455,27 @@ function FilterForNonInverted takes group whichGroup returns group
         exitwhen (first == null)
         set timeObjectUnit = TimeObjectUnit.fromUnit(first)
         if (timeObjectUnit != 0 and not timeObjectUnit.isInverted()) then
+            call GroupAddUnit(result, first)
+        endif
+        call GroupRemoveUnit(copy, first)
+    endloop
+
+    call DestroyGroup(copy)
+    set copy = null
+
+    return result
+endfunction
+
+function FilterForDifferentThanTime takes Time whichTime, group whichGroup returns group
+    local group result = CreateGroup()
+    local group copy = CopyGroup(whichGroup)
+    local TimeObjectUnit timeObjectUnit = 0
+    local unit first = null
+    loop
+        set first = FirstOfGroup(copy)
+        exitwhen (first == null)
+        set timeObjectUnit = TimeObjectUnit.fromUnit(first)
+        if (timeObjectUnit != 0 and whichTime.isInverted() != timeObjectUnit.isInverted()) then
             call GroupAddUnit(result, first)
         endif
         call GroupRemoveUnit(copy, first)
