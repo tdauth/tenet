@@ -2466,6 +2466,27 @@ function FilterForNonInverted takes group whichGroup returns group
     return result
 endfunction
 
+function FilterForSameAsTime takes Time whichTime, group whichGroup returns group
+    local group result = CreateGroup()
+    local group copy = CopyGroup(whichGroup)
+    local TimeObjectUnit timeObjectUnit = 0
+    local unit first = null
+    loop
+        set first = FirstOfGroup(copy)
+        exitwhen (first == null)
+        set timeObjectUnit = TimeObjectUnit.fromUnit(first)
+        if (timeObjectUnit == 0 or (timeObjectUnit != 0 and whichTime.isInverted() == timeObjectUnit.isInverted())) then
+            call GroupAddUnit(result, first)
+        endif
+        call GroupRemoveUnit(copy, first)
+    endloop
+
+    call DestroyGroup(copy)
+    set copy = null
+
+    return result
+endfunction
+
 function FilterForDifferentThanTime takes Time whichTime, group whichGroup returns group
     local group result = CreateGroup()
     local group copy = CopyGroup(whichGroup)
@@ -2475,7 +2496,7 @@ function FilterForDifferentThanTime takes Time whichTime, group whichGroup retur
         set first = FirstOfGroup(copy)
         exitwhen (first == null)
         set timeObjectUnit = TimeObjectUnit.fromUnit(first)
-        if (timeObjectUnit != 0 and whichTime.isInverted() != timeObjectUnit.isInverted()) then
+        if (timeObjectUnit == 0 or (timeObjectUnit != 0 and whichTime.isInverted() != timeObjectUnit.isInverted())) then
             call GroupAddUnit(result, first)
         endif
         call GroupRemoveUnit(copy, first)
