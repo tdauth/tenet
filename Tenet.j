@@ -90,6 +90,8 @@ library MapEvents initializer Init requires Tenet
 
     endstruct
 
+    // TODO Add place mines, repair, heal and mana potions with custom spells
+
     globals
         TimeObjectTurnstileMachine turnstileMachine = 0
         TimeObjectTrain train = 0
@@ -2471,12 +2473,16 @@ function FilterForSameAsTime takes Time whichTime, group whichGroup returns grou
     local group copy = CopyGroup(whichGroup)
     local TimeObjectUnit timeObjectUnit = 0
     local unit first = null
+    call PrintMsg("Filter for same as time!")
     loop
         set first = FirstOfGroup(copy)
         exitwhen (first == null)
         set timeObjectUnit = TimeObjectUnit.fromUnit(first)
-        if (timeObjectUnit == 0 or (timeObjectUnit != 0 and whichTime.isInverted() == timeObjectUnit.isInverted())) then
+        if (timeObjectUnit != 0 and whichTime.isInverted() == timeObjectUnit.isInverted()) then
+            call PrintMsg("Adding unit " + GetUnitName(first))
             call GroupAddUnit(result, first)
+        else
+            call PrintMsg("Excluding unit " + GetUnitName(first))
         endif
         call GroupRemoveUnit(copy, first)
     endloop
@@ -2496,7 +2502,7 @@ function FilterForDifferentThanTime takes Time whichTime, group whichGroup retur
         set first = FirstOfGroup(copy)
         exitwhen (first == null)
         set timeObjectUnit = TimeObjectUnit.fromUnit(first)
-        if (timeObjectUnit == 0 or (timeObjectUnit != 0 and whichTime.isInverted() != timeObjectUnit.isInverted())) then
+        if (timeObjectUnit != 0 and whichTime.isInverted() != timeObjectUnit.isInverted()) then
             call GroupAddUnit(result, first)
         endif
         call GroupRemoveUnit(copy, first)
