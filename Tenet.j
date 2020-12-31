@@ -24,9 +24,9 @@ library MapEvents initializer Init requires Tenet
             call SetUnitOwner(circleOfPower, ownerBefore, true)
             call PlaySoundBJ(invertedConquerSound)
             if (IsPlayerInForce(ownerAfter, udg_GoodGuys)) then
-                call DisplayTextToForce(GetPlayersAll(), ReverseString("TRIGSTR_283"))
+                call DisplayTextToForce(GetPlayersAll(), ReverseString(GetLocalizedString("TRIGSTR_283")))
             else
-                call DisplayTextToForce(GetPlayersAll(), ReverseString("TRIGSTR_284"))
+                call DisplayTextToForce(GetPlayersAll(), ReverseString(GetLocalizedString("TRIGSTR_284")))
             endif
         endmethod
 
@@ -302,7 +302,7 @@ function ReverseString takes string whichString returns string
 endfunction
 
 globals
-    constant real TIMER_PERIODIC_INTERVAL = 0.05
+    constant real TIMER_PERIODIC_INTERVAL = 0.10
 endglobals
 
 interface ChangeEvent
@@ -368,6 +368,10 @@ interface TimeObject
      */
     public method onRestore takes integer time returns nothing
     /**
+     * Called when the object is stopped being restored since the time goes into the same direction as the object again.
+     */
+    public method onStopRestoring takes integer time returns nothing
+    /**
      * Called when the global time changes its direction contrary to the objects time direction.
      */
     public method onInitialInvert takes boolean globalTimeInverted returns nothing
@@ -400,6 +404,7 @@ interface Time
     public method addUnit takes boolean inverted, unit whichUnit returns TimeObject
     public method addItem takes boolean inverted, item whichItem returns TimeObject
     public method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
+    public method addTimer takes boolean inverted, timer whichTimer returns TimeObject
     /**
      * Returns a group since the unit might contain transported units which will be inverted as well.
      */
@@ -1133,6 +1138,24 @@ struct ChangeEventDestructableAnimation extends ChangeEventDestructable
 
 endstruct
 
+struct ChangeEventTimerProgress extends ChangeEventImpl
+    private TimeObjectTimer timeObjectTimer
+    private real remainingTime
+
+    public stub method restore takes nothing returns nothing
+        //call PrintMsg("|cff00ff00Hurray: Restore timer progress " + timeObjectTimer.getName() + " with remaining time " + R2S(this.remainingTime) + "|r")
+        call StartTimerBJ(timeObjectTimer.getTimer(), false, this.remainingTime)
+        call PauseTimerBJ(true, timeObjectTimer.getTimer())
+    endmethod
+
+    public static method create takes TimeObjectTimer timeObjectTimer, real remainingTime returns thistype
+        local thistype this = thistype.allocate()
+        set this.timeObjectTimer = timeObjectTimer
+        set this.remainingTime = remainingTime
+        return this
+    endmethod
+endstruct
+
 struct TimeFrameImpl extends TimeFrame
     private ChangeEventImpl changeEventsHead = 0
 
@@ -1407,6 +1430,9 @@ struct TimeObjectImpl extends TimeObject
     public stub method onRestore takes integer time returns nothing
     endmethod
 
+    public stub method onStopRestoring takes integer time returns nothing
+    endmethod
+
     public stub method onInitialInvert takes boolean globalTimeInverted returns nothing
     endmethod
 
@@ -1428,6 +1454,10 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
         return "time of day " + super.getName()
     endmethod
 
+    public stub method onExists takes integer time returns nothing
+        call this.startRecordingChanges(time)
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
         call this.addChangeEvent(time, ChangeEventTimeOfDay.create())
         //call PrintMsg("recordChanges for time of day")
@@ -1435,7 +1465,6 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
 
     public static method create takes integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
-        call this.startRecordingChanges(startTime)
         return this
     endmethod
 
@@ -1450,6 +1479,10 @@ struct TimeObjectMusic extends TimeObjectImpl
         return "music " + super.getName()
     endmethod
 
+    public stub method onExists takes integer time returns nothing
+        call this.startRecordingChanges(time)
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
         call this.getTimeLine().flushAllFrom(time - 1)
         call this.addChangeEvent(time, ChangeEventMusicTime.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
@@ -1461,7 +1494,6 @@ struct TimeObjectMusic extends TimeObjectImpl
         set this.whichTime = whichTime
         set this.whichMusic = whichMusic
         set this.whichMusicInverted = whichMusicInverted
-        call this.startRecordingChanges(startTime)
         return this
     endmethod
 
@@ -1476,6 +1508,12 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         return "music inverted " + super.getName()
     endmethod
 
+    public stub method onExists takes integer time returns nothing
+        call this.startRecordingChanges(time)
+        // initial event to change the music forward
+        call this.recordChanges(time)
+    endmethod
+
     public stub method recordChanges takes integer time returns nothing
         call this.getTimeLine().flushAllFrom(time + 1)
         call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
@@ -1487,9 +1525,6 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         set this.whichTime = whichTime
         set this.whichMusic = whichMusic
         set this.whichMusicInverted = whichMusicInverted
-        call this.startRecordingChanges(startTime)
-        // initial event to change the music forward
-        call this.recordChanges(startTime)
         return this
     endmethod
 
@@ -1592,6 +1627,9 @@ struct TimeObjectUnit extends TimeObjectImpl
         call changeEventFacing.setFacing(facing)
     endmethod
 
+    /**
+     * \param clockwiseFacing If true the facing will be restored clockwise.
+    */
     // https://math.stackexchange.com/a/2045181
     public method addChangeEventPositionsOverTime takes integer startTime, integer endTime, real startX, real startY, real startFacing, real endX, real endY, real endFacing, boolean clockwiseFacing returns nothing
         local real tmp = 0
@@ -1606,7 +1644,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         local integer i = startTime
         local integer endValue = endTime
 
-        if (clockwiseFacing) then
+        if (not clockwiseFacing) then
             set facingDistance = RAbsBJ(endFacing - 360.0 - startFacing)
         endif
 
@@ -2074,6 +2112,52 @@ struct TimeObjectDestructable extends TimeObjectImpl
 
 endstruct
 
+struct TimeObjectTimer extends TimeObjectImpl
+    private timer whichTimer
+    private real timeout
+
+    public method getTimer takes nothing returns timer
+        return this.whichTimer
+    endmethod
+
+    public stub method getName takes nothing returns string
+        return "Timer with handle ID " + I2S(GetHandleId(whichTimer)) + super.getName()
+    endmethod
+
+    public stub method onStopRestoring takes integer time returns nothing
+        call StartTimerBJ(whichTimer, false, TimerGetRemaining(whichTimer))
+    endmethod
+
+    public stub method onExists takes integer time returns nothing
+        call StartTimerBJ(whichTimer, false, timeout)
+        call this.startRecordingChanges(time)
+    endmethod
+
+    public stub method recordChanges takes integer time returns nothing
+        //call PrintMsg("Add timer event " + this.getName())
+        call this.addChangeEvent(time, ChangeEventTimerProgress.create(this, TimerGetRemaining(whichTimer)))
+    endmethod
+
+    public static method create takes timer whichTimer, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichTimer = whichTimer
+        set this.timeout = TimerGetTimeout(whichTimer)
+
+        call SaveData(whichTimer, this)
+
+        return this
+    endmethod
+
+    public method onDestroy takes nothing returns nothing
+        call FlushData(this.whichTimer)
+        set this.whichTimer = null
+    endmethod
+
+    public static method fromTimer takes timer whichTimer returns thistype
+        return LoadData(whichTimer)
+    endmethod
+endstruct
+
 struct TimeImpl extends Time
     private integer time = 0
     private boolean inverted = false
@@ -2141,6 +2225,7 @@ struct TimeImpl extends Time
             // flush all changes from now
             if (timeObject.isInverted() == this.isInverted()) then
                 call timeObject.getTimeLine().flushAllFrom(time)
+                call timeObject.onStopRestoring(time)
             // stop recording changes and restore if possible
             else
                 call timeObject.onInitialInvert(inverted)
@@ -2207,12 +2292,19 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addTimeOfDay takes nothing returns TimeObject
-        return this.addObject(TimeObjectTimeOfDay.create(this.getTime(), false))
+        local TimeObjectTimeOfDay timeObjectTimeOfDay = TimeObjectTimeOfDay.create(this.getTime(), false)
+        return this.addObject(timeObjectTimeOfDay)
+        call timeObjectTimeOfDay.onExists(this.getTime())
+        return timeObjectTimeOfDay
     endmethod
 
     public stub method addMusic takes string whichMusic, string whichMusicInverted returns nothing
-        call this.addObject(TimeObjectMusic.create(this.getTime(), this, whichMusic, whichMusicInverted))
-        call this.addObject(TimeObjectMusicInverted.create(this.getTime(), this, whichMusic, whichMusicInverted))
+        local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this.getTime(), this, whichMusic, whichMusicInverted)
+        local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this.getTime(), this, whichMusic, whichMusicInverted)
+        call this.addObject(timeObjectMusic)
+        call timeObjectMusicInverted.onExists(this.getTime())
+        call this.addObject(timeObjectMusicInverted)
+        call timeObjectMusicInverted.onExists(this.getTime())
     endmethod
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
@@ -2233,6 +2325,14 @@ struct TimeImpl extends Time
 
     public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
         local TimeObjectDestructable result = TimeObjectDestructable.create(whichDestructable, this.getTime(), inverted)
+        call this.addObject(result)
+        call result.onExists(this.getTime())
+
+        return result
+    endmethod
+
+    public stub method addTimer takes boolean inverted, timer whichTimer returns TimeObject
+        local TimeObjectTimer result = TimeObjectTimer.create(whichTimer, this.getTime(), inverted)
         call this.addObject(result)
         call result.onExists(this.getTime())
 
