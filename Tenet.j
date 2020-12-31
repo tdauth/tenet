@@ -1463,6 +1463,10 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
         //call PrintMsg("recordChanges for time of day")
     endmethod
 
+    public stub method onStopRestoring takes integer time returns nothing
+        call this.startRecordingChanges(time)
+    endmethod
+
     public static method create takes integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
         return this
@@ -1487,6 +1491,10 @@ struct TimeObjectMusic extends TimeObjectImpl
         call this.getTimeLine().flushAllFrom(time - 1)
         call this.addChangeEvent(time, ChangeEventMusicTime.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
         //call PrintMsg("recordChanges for music")
+    endmethod
+
+    public stub method onStopRestoring takes integer time returns nothing
+        call this.startRecordingChanges(time)
     endmethod
 
     public static method create takes integer startTime, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
@@ -1518,6 +1526,10 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         call this.getTimeLine().flushAllFrom(time + 1)
         call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
         //call PrintMsg("recordChanges for music")
+    endmethod
+
+    public stub method onStopRestoring takes integer time returns nothing
+        call this.startRecordingChanges(time)
     endmethod
 
     public static method create takes integer startTime, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
@@ -2126,6 +2138,7 @@ struct TimeObjectTimer extends TimeObjectImpl
 
     public stub method onStopRestoring takes integer time returns nothing
         call StartTimerBJ(whichTimer, false, TimerGetRemaining(whichTimer))
+        call this.startRecordingChanges(time)
     endmethod
 
     public stub method onExists takes integer time returns nothing
@@ -2186,6 +2199,7 @@ struct TimeImpl extends Time
                 call timeObject.onRestore(time)
                 call timeLine.restore(timeObject, time)
             else
+                // TODO Check if the time is AFTER the start time as well and if the onExist has not been called before, otherwise the whole onExist calls are missing!!!!
                 if (time == timeObject.getStartTime()) then
                     call timeObject.onExists(time)
                 endif
@@ -2302,15 +2316,21 @@ struct TimeImpl extends Time
         local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this.getTime(), this, whichMusic, whichMusicInverted)
         local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this.getTime(), this, whichMusic, whichMusicInverted)
         call this.addObject(timeObjectMusic)
-        call timeObjectMusicInverted.onExists(this.getTime())
+        if (this.isInverted() == timeObjectMusic.isInverted()) then
+            call timeObjectMusic.onExists(this.getTime())
+        endif
         call this.addObject(timeObjectMusicInverted)
-        call timeObjectMusicInverted.onExists(this.getTime())
+        if (this.isInverted() == timeObjectMusicInverted.isInverted()) then
+            call timeObjectMusicInverted.onExists(this.getTime())
+        endif
     endmethod
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
         local TimeObjectUnit result = TimeObjectUnit.create(whichUnit, this.getTime(), inverted)
         call this.addObject(result)
-        call result.onExists(this.getTime())
+        if (this.isInverted() == result.isInverted()) then
+            call result.onExists(this.getTime())
+        endif
 
         return result
     endmethod
@@ -2318,7 +2338,9 @@ struct TimeImpl extends Time
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
         local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
         call this.addObject(result)
-        call result.onExists(this.getTime())
+        if (this.isInverted() == result.isInverted()) then
+            call result.onExists(this.getTime())
+        endif
 
         return result
     endmethod
@@ -2326,7 +2348,9 @@ struct TimeImpl extends Time
     public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
         local TimeObjectDestructable result = TimeObjectDestructable.create(whichDestructable, this.getTime(), inverted)
         call this.addObject(result)
-        call result.onExists(this.getTime())
+        if (this.isInverted() == result.isInverted()) then
+            call result.onExists(this.getTime())
+        endif
 
         return result
     endmethod
@@ -2334,7 +2358,9 @@ struct TimeImpl extends Time
     public stub method addTimer takes boolean inverted, timer whichTimer returns TimeObject
         local TimeObjectTimer result = TimeObjectTimer.create(whichTimer, this.getTime(), inverted)
         call this.addObject(result)
-        call result.onExists(this.getTime())
+        if (this.isInverted() == result.isInverted()) then
+            call result.onExists(this.getTime())
+        endif
 
         return result
     endmethod
