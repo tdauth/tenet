@@ -288,7 +288,7 @@ endfunction
 
 endlibrary
 
-library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit
+library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit, UnitProgress
 
 function ReverseString takes string whichString returns string
     local string result = ""
@@ -939,17 +939,33 @@ struct ChangeEventUnitConstructionProgress extends ChangeEventUnit
     private integer progress
 
     public stub method onChange takes integer time returns nothing
-        set this.progress = IMaxBJ(1, (UnitTypes.getConstructionTime(GetUnitTypeId(this.getUnit())) - startTime - time) * 100 / UnitTypes.getConstructionTime(GetUnitTypeId(this.getUnit())))
+        local integer totalConstructionTime = UnitTypes.getConstructionTime(GetUnitTypeId(this.getUnit()))
+        local integer currentConstructionTime = R2I(GetUnitConstructionProgress(this.getUnit()))
+        set this.progress = IMaxBJ(1, currentConstructionTime * 100 / totalConstructionTime)
+        call PrintMsg("|cff00ff00Hurray: Storing construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
     endmethod
 
     public stub method restore takes nothing returns nothing
-        //call PrintMsg("|cff00ff00Hurray: Restore construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
+        call PrintMsg("|cff00ff00Hurray: Restore construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
         call UnitSetConstructionProgress(this.getUnit(), progress)
     endmethod
 
     public static method create takes unit whichUnit, integer startTime returns thistype
         local thistype this = thistype.allocate(whichUnit)
         set this.startTime = startTime
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitCancelConstruction extends ChangeEventUnit
+
+    public stub method restore takes nothing returns nothing
+        // TODO Ressurrect building
+    endmethod
+
+    public static method create takes unit whichUnit returns thistype
+        local thistype this = thistype.allocate(whichUnit)
         return this
     endmethod
 
@@ -1497,7 +1513,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger acquireTargetTrigger
     private trigger loadTrigger
     private trigger unloadTrigger
-    private trigger beginConstructionTrigger
+    private trigger startConstructionTrigger
     private trigger cancelConstructionTrigger
     private trigger finishConstructionTrigger
     // TODO Restore reverse "Stand Work" animations.
@@ -1761,22 +1777,23 @@ struct TimeObjectUnit extends TimeObjectImpl
         return GetConstructingStructure() == this.getUnit()
     endmethod
 
-    public method beginConstruction takes nothing returns nothing
+    public method startConstruction takes nothing returns nothing
         set this.isBeingConstructed = true
         set this.constructionStartTime = globalTime.getTime()
-        call this.startRecordingChanges(globalTime.getTime())
-        //call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
+        call this.startRecordingChanges(this.constructionStartTime)
+        call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
     endmethod
 
     public method cancelConstruction takes nothing returns nothing
         //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
         call this.stopRecordingChanges(globalTime.getTime())
         set this.isBeingConstructed = false
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitCancelConstruction.create(this.getUnit()))
     endmethod
 
-    private static method triggerFunctionBeginConstruction takes nothing returns nothing
+    private static method triggerFunctionStartConstruction takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.beginConstruction()
+        call this.startConstruction()
     endmethod
 
     private static method triggerConditionCancelConstruction takes nothing returns boolean
@@ -1789,6 +1806,12 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.cancelConstruction()
     endmethod
 
+    public method finishConstruction takes nothing returns nothing
+        //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
+        call this.stopRecordingChanges(globalTime.getTime())
+        set this.isBeingConstructed = false
+    endmethod
+
     private static method triggerConditionFinishConstruction takes nothing returns boolean
         local thistype this = LoadData(GetTriggeringTrigger())
         return GetConstructedStructure() == this.getUnit()
@@ -1796,7 +1819,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionFinishConstruction takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.cancelConstruction()
+        call this.finishConstruction()
     endmethod
 
     public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
@@ -1870,11 +1893,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.unloadTrigger, function thistype.triggerFunctionUnload)
         call SaveData(this.unloadTrigger, this)
 
-        set this.beginConstructionTrigger = CreateTrigger()
-        call TriggerRegisterAnyUnitEventBJ(this.beginConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_START)
-        call TriggerAddCondition(this.beginConstructionTrigger, Condition(function thistype.triggerConditionBeginConstruction))
-        call TriggerAddAction(this.beginConstructionTrigger, function thistype.triggerFunctionBeginConstruction)
-        call SaveData(this.beginConstructionTrigger, this)
+        set this.startConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(this.startConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_START)
+        call TriggerAddCondition(this.startConstructionTrigger, Condition(function thistype.triggerConditionBeginConstruction))
+        call TriggerAddAction(this.startConstructionTrigger, function thistype.triggerFunctionStartConstruction)
+        call SaveData(this.startConstructionTrigger, this)
 
         set this.cancelConstructionTrigger = CreateTrigger()
         call TriggerRegisterAnyUnitEventBJ(this.cancelConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_CANCEL)
@@ -1937,7 +1960,6 @@ struct TimeObjectUnit extends TimeObjectImpl
         call DestroyTrigger(this.acquireTargetTrigger)
         set this.acquireTargetTrigger = null
 
-
         call FlushData(this.loadTrigger)
         call DestroyTrigger(this.loadTrigger)
         set this.loadTrigger = null
@@ -1946,9 +1968,9 @@ struct TimeObjectUnit extends TimeObjectImpl
         call DestroyTrigger(this.unloadTrigger)
         set this.unloadTrigger = null
 
-        call FlushData(this.beginConstructionTrigger)
-        call DestroyTrigger(this.beginConstructionTrigger)
-        set this.beginConstructionTrigger = null
+        call FlushData(this.startConstructionTrigger)
+        call DestroyTrigger(this.startConstructionTrigger)
+        set this.startConstructionTrigger = null
 
         call FlushData(this.cancelConstructionTrigger)
         call DestroyTrigger(this.cancelConstructionTrigger)
@@ -2195,7 +2217,7 @@ struct TimeImpl extends Time
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
         local TimeObjectUnit result = TimeObjectUnit.create(whichUnit, this.getTime(), inverted)
-        local integer index = this.addObject(result)
+        call this.addObject(result)
         call result.onExists(this.getTime())
 
         return result
@@ -2203,7 +2225,7 @@ struct TimeImpl extends Time
 
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
         local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
-        local integer index = this.addObject(result)
+        call this.addObject(result)
         call result.onExists(this.getTime())
 
         return result
@@ -2211,7 +2233,7 @@ struct TimeImpl extends Time
 
     public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
         local TimeObjectDestructable result = TimeObjectDestructable.create(whichDestructable, this.getTime(), inverted)
-        local integer index = this.addObject(result)
+        call this.addObject(result)
         call result.onExists(this.getTime())
 
         return result
@@ -2473,16 +2495,12 @@ function FilterForSameAsTime takes Time whichTime, group whichGroup returns grou
     local group copy = CopyGroup(whichGroup)
     local TimeObjectUnit timeObjectUnit = 0
     local unit first = null
-    call PrintMsg("Filter for same as time!")
     loop
         set first = FirstOfGroup(copy)
         exitwhen (first == null)
         set timeObjectUnit = TimeObjectUnit.fromUnit(first)
         if (timeObjectUnit != 0 and whichTime.isInverted() == timeObjectUnit.isInverted()) then
-            call PrintMsg("Adding unit " + GetUnitName(first))
             call GroupAddUnit(result, first)
-        else
-            call PrintMsg("Excluding unit " + GetUnitName(first))
         endif
         call GroupRemoveUnit(copy, first)
     endloop
@@ -3476,7 +3494,62 @@ library ReverseAnimation requires TimerUtils
 
 endlibrary
 
-library CopyUnit requires Transports
+library CopyItem
+
+    function CopyItemApply takes item whichItem, item result returns nothing
+        call SetItemVisible(result, IsItemVisible(whichItem))
+        call SetItemCharges(result, GetItemCharges(whichItem))
+        call SetItemInvulnerable(result, IsItemInvulnerable(whichItem))
+        call SetItemPawnable(result, IsItemPawnable(whichItem))
+        // TODO
+        //call SetItemSellable(result, IsItemSellable(whichItem))
+        call SetItemUserData(result, GetItemUserData(whichItem))
+        if (GetItemPlayer(whichItem) != null) then
+            call SetItemPlayer(result, GetItemPlayer(whichItem), true)
+        endif
+        call SetWidgetLife(result, GetWidgetLife(whichItem))
+        // TODO
+        call SetItemDroppable(result, true)
+        //SetItemDropOnDeath
+        call BlzSetItemName(result, GetItemName(whichItem))
+        call BlzSetItemTooltip(result, BlzGetItemTooltip(whichItem))
+        call BlzSetItemDescription(result, BlzGetItemDescription(whichItem))
+        call BlzSetItemExtendedTooltip(result, BlzGetItemExtendedTooltip(whichItem))
+        // TODO
+        //call BlzSetItemIconPath(result, BlzGetItemStringField(whichItem, ITEM_SF_MODEL_USED))
+        call BlzSetItemSkin(result, BlzGetItemSkin(whichItem))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_DROPPED_WHEN_CARRIER_DIES, BlzGetItemBooleanField(whichItem, ITEM_BF_DROPPED_WHEN_CARRIER_DIES))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_CAN_BE_DROPPED, BlzGetItemBooleanField(whichItem, ITEM_BF_CAN_BE_DROPPED))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_PERISHABLE, BlzGetItemBooleanField(whichItem, ITEM_BF_PERISHABLE))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_INCLUDE_AS_RANDOM_CHOICE, BlzGetItemBooleanField(whichItem, ITEM_BF_INCLUDE_AS_RANDOM_CHOICE))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_USE_AUTOMATICALLY_WHEN_ACQUIRED, BlzGetItemBooleanField(whichItem, ITEM_BF_USE_AUTOMATICALLY_WHEN_ACQUIRED))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_CAN_BE_SOLD_TO_MERCHANTS, BlzGetItemBooleanField(whichItem, ITEM_BF_CAN_BE_SOLD_TO_MERCHANTS))
+        call BlzSetItemBooleanFieldBJ(result, ITEM_BF_ACTIVELY_USED, BlzGetItemBooleanField(whichItem, ITEM_BF_ACTIVELY_USED))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_LEVEL, BlzGetItemIntegerField(whichItem, ITEM_IF_LEVEL))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_NUMBER_OF_CHARGES, BlzGetItemIntegerField(whichItem, ITEM_IF_NUMBER_OF_CHARGES))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_COOLDOWN_GROUP, BlzGetItemIntegerField(whichItem, ITEM_IF_COOLDOWN_GROUP))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_MAX_HIT_POINTS, BlzGetItemIntegerField(whichItem, ITEM_IF_MAX_HIT_POINTS))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_HIT_POINTS, BlzGetItemIntegerField(whichItem, ITEM_IF_HIT_POINTS))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_PRIORITY, BlzGetItemIntegerField(whichItem, ITEM_IF_PRIORITY))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_ARMOR_TYPE, BlzGetItemIntegerField(whichItem, ITEM_IF_ARMOR_TYPE))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_TINTING_COLOR_RED, BlzGetItemIntegerField(whichItem, ITEM_IF_TINTING_COLOR_RED))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_TINTING_COLOR_GREEN, BlzGetItemIntegerField(whichItem, ITEM_IF_TINTING_COLOR_GREEN))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_TINTING_COLOR_BLUE, BlzGetItemIntegerField(whichItem, ITEM_IF_TINTING_COLOR_BLUE))
+        call BlzSetItemIntegerFieldBJ(result, ITEM_IF_TINTING_COLOR_ALPHA, BlzGetItemIntegerField(whichItem, ITEM_IF_TINTING_COLOR_ALPHA))
+        call BlzSetItemRealFieldBJ(result, ITEM_RF_SCALING_VALUE, BlzGetItemRealField(whichItem, ITEM_RF_SCALING_VALUE))
+        call BlzSetItemStringFieldBJ(result, ITEM_SF_MODEL_USED, BlzGetItemStringField(whichItem, ITEM_SF_MODEL_USED))
+    endfunction
+
+    function CopyItem takes item whichItem, real x, real y returns item
+        local item result = CreateItem(GetItemTypeId(whichItem), x, y)
+        call CopyItemApply(whichItem, result)
+
+        return result
+    endfunction
+
+endlibrary
+
+library CopyUnit requires CopyItem, Transports
 
     private function CopyGroup takes group whichGroup returns group
         local group copy = CreateGroup()
@@ -3484,12 +3557,16 @@ library CopyUnit requires Transports
         return copy
     endfunction
 
+    // TODO Add transported units to the transport
+    // TODO Copy items (except unique campaign items)
     function CopyUnit takes player owner, unit whichUnit, real x, real y, real facing returns group
         local group result = CreateGroup()
+        local unit directCopy = CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing)
         local group transportedUnits = GetTransportedUnits(whichUnit)
         local group transportedUnitsCopy = CopyGroup(transportedUnits)
         local unit first = null
-        call GroupAddUnit(result, CreateUnit(owner, GetUnitTypeId(whichUnit), x, y, facing))
+        local integer i
+        call GroupAddUnit(result, directCopy)
         loop
             set first = FirstOfGroup(transportedUnitsCopy)
             exitwhen (first == null)
@@ -3499,6 +3576,41 @@ library CopyUnit requires Transports
 
         call DestroyGroup(transportedUnitsCopy)
         set transportedUnitsCopy = null
+
+        // copy inventory
+        set i = 0
+        loop
+            exitwhen(i == bj_MAX_INVENTORY)
+            if (UnitItemInSlot(whichUnit, i) != null) then
+                call UnitAddItemToSlotById(directCopy, GetItemTypeId(UnitItemInSlot(whichUnit, i)), i)
+                call CopyItemApply(UnitItemInSlot(whichUnit, i), UnitItemInSlot(directCopy, i))
+            endif
+            set i = i + 1
+        endloop
+
+        // copy stats
+        call SetUnitLifeBJ(directCopy, GetUnitStateSwap(UNIT_STATE_LIFE, whichUnit))
+        call SetUnitManaBJ(directCopy, GetUnitStateSwap(UNIT_STATE_MANA, whichUnit))
+        call BlzSetUnitMaxHP(directCopy, BlzGetUnitMaxHP(whichUnit))
+        call BlzSetUnitMaxMana(directCopy, BlzGetUnitMaxMana(whichUnit))
+        call BlzSetUnitName(directCopy, GetUnitName(whichUnit))
+
+        // copy hero stats
+        if (IsUnitType(whichUnit, UNIT_TYPE_HERO)) then
+            call BlzSetHeroProperName(directCopy, GetHeroProperName(whichUnit))
+            call SetHeroLevelBJ(directCopy, GetHeroLevel(whichUnit), false)
+            call SetHeroXP(directCopy, GetHeroXP(whichUnit), false)
+            call ModifyHeroStat(bj_HEROSTAT_STR, directCopy, bj_MODIFYMETHOD_SET, GetHeroStatBJ(bj_HEROSTAT_STR, whichUnit, false))
+            call ModifyHeroStat(bj_HEROSTAT_AGI, directCopy, bj_MODIFYMETHOD_SET, GetHeroStatBJ(bj_HEROSTAT_AGI, whichUnit, false))
+            call ModifyHeroStat(bj_HEROSTAT_INT, directCopy, bj_MODIFYMETHOD_SET, GetHeroStatBJ(bj_HEROSTAT_INT, whichUnit, false))
+            call ModifyHeroSkillPoints(directCopy, bj_MODIFYMETHOD_SET, GetHeroSkillPoints(whichUnit))
+        endif
+
+        // TODO copy cooldowns
+
+        // TODO copy buffs
+
+        // TODO all unit fields
 
         return result
     endfunction
@@ -3752,6 +3864,115 @@ library Transports initializer Init
         call TriggerRegisterAnyUnitEventBJ(unloadTrigger, EVENT_PLAYER_UNIT_DEATH)
         call TriggerAddCondition(unloadTrigger, Condition(function TriggerConditionUnload))
         call TriggerAddAction(unloadTrigger, function TriggerActionUnload)
+    endfunction
+
+endlibrary
+
+/**
+ * This system allows retrieving the current absolute progress of constructions/researches/upgrades/trainings/revivals.
+ * Unfortunately, there are no natives to change the progresses.
+ *
+ * IsUnitInConstruction -
+ *
+ * GetUnitConstructionProgress -
+ */
+library UnitProgress initializer Init
+
+    globals
+        private hashtable whichHashTable = InitHashtable()
+        private trigger startConstructionTrigger
+        private trigger cancelConstructionTrigger
+        private trigger finishConstructionTrigger
+        private trigger beginResearchTrigger
+        private trigger cancelResearchTrigger
+        private trigger finishResearchTrigger
+        private trigger beginUpgradeTrigger
+        private trigger cancelUpgradeTrigger
+        private trigger finishUpgradeTrigger
+        private trigger beginTrainingTrigger
+        private trigger cancelTrainingTrigger
+        private trigger finishTrainingTrigger
+        private trigger beginRevivingTrigger
+        private trigger cancelRevivingTrigger
+        private trigger finishRevivingTrigger
+        private trigger deathTrigger
+
+        private constant integer KEY_CONSTRUCTION = 0
+    endglobals
+
+    function IsUnitInConstruction takes unit whichUnit returns boolean
+        return HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), KEY_CONSTRUCTION)
+    endfunction
+
+    function GetUnitConstructionProgress takes unit whichUnit returns real
+        local timer whichTimer = null
+        if (IsUnitInConstruction(whichUnit)) then
+            return TimerGetElapsed(LoadTimerHandle(whichHashTable, GetHandleId(whichUnit), KEY_CONSTRUCTION))
+        else
+            return 0.0
+        endif
+    endfunction
+
+    function GetUnitTrainingProgress takes unit whichUnit returns real
+        return 0.0
+    endfunction
+
+    function GetUnitResearchProgress takes unit whichUnit returns real
+        return 0.0
+    endfunction
+
+    function GetUnitUpgradeProgress takes unit whichUnit returns real
+        return 0.0
+    endfunction
+
+    function GetUnitReviveProgress takes unit whichUnit returns real
+        return 0.0
+    endfunction
+
+    private function RemoveConstructionProgressTimer takes unit whichUnit returns nothing
+        local timer whichTimer = null
+        if (IsUnitInConstruction(whichUnit)) then
+            set whichTimer = LoadTimerHandle(whichHashTable, GetHandleId(whichUnit), KEY_CONSTRUCTION)
+            call PauseTimer(whichTimer)
+            call DestroyTimer(whichTimer)
+            call RemoveSavedHandle(whichHashTable, GetHandleId(whichUnit), KEY_CONSTRUCTION)
+        endif
+    endfunction
+
+    private function TriggerFunctionStartConstruction takes nothing returns nothing
+        local timer whichTimer = CreateTimer()
+        call SaveTimerHandle(whichHashTable, GetHandleId(GetTriggerUnit()), KEY_CONSTRUCTION, whichTimer)
+        call TimerStart(whichTimer, 10000.0, false, null)
+    endfunction
+
+    private function TriggerFunctionCancelConstruction takes nothing returns nothing
+        call RemoveConstructionProgressTimer(GetTriggerUnit())
+    endfunction
+
+    private function TriggerFunctionFinishConstruction takes nothing returns nothing
+        call RemoveConstructionProgressTimer(GetTriggerUnit())
+    endfunction
+
+    private function TriggerFunctionDeath takes nothing returns nothing
+        call RemoveConstructionProgressTimer(GetTriggerUnit())
+    endfunction
+
+    private function Init takes nothing returns nothing
+        set startConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(startConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_START)
+        call TriggerAddAction(startConstructionTrigger, function TriggerFunctionStartConstruction)
+
+        set cancelConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(cancelConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_CANCEL)
+        call TriggerAddAction(cancelConstructionTrigger, function TriggerFunctionCancelConstruction)
+
+        set finishConstructionTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(finishConstructionTrigger, EVENT_PLAYER_UNIT_CONSTRUCT_FINISH)
+        call TriggerAddAction(finishConstructionTrigger, function TriggerFunctionFinishConstruction)
+
+        set deathTrigger = CreateTrigger()
+        call TriggerRegisterAnyUnitEventBJ(deathTrigger, EVENT_PLAYER_UNIT_DEATH)
+        call TriggerAddAction(deathTrigger, function TriggerFunctionDeath)
     endfunction
 
 endlibrary
