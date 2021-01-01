@@ -16,6 +16,7 @@ library MapEvents initializer Init requires Tenet
         private unit circleOfPower
         private player ownerBefore
         private player ownerAfter
+        private string message
 
         public stub method onChange takes integer time returns nothing
         endmethod
@@ -24,18 +25,19 @@ library MapEvents initializer Init requires Tenet
             call SetUnitOwner(circleOfPower, ownerBefore, true)
             call PlaySoundBJ(invertedConquerSound)
             if (IsPlayerInForce(ownerAfter, udg_GoodGuys)) then
-                call DisplayTextToForce(GetPlayersAll(), ReverseString(GetLocalizedString("TRIGSTR_283")))
+                call DisplayTextToForce(GetPlayersAll(), ReverseString(message))
             else
-                call DisplayTextToForce(GetPlayersAll(), ReverseString(GetLocalizedString("TRIGSTR_284")))
+                call DisplayTextToForce(GetPlayersAll(), ReverseString(message))
             endif
         endmethod
 
-    public static method create takes sound invertedConquerSound, unit circleOfPower, player ownerBefore, player ownerAfter returns thistype
+    public static method create takes sound invertedConquerSound, unit circleOfPower, player ownerBefore, player ownerAfter, string message returns thistype
         local thistype this = thistype.allocate()
         set this.invertedConquerSound = invertedConquerSound
         set this.circleOfPower = circleOfPower
         set this.ownerBefore = ownerBefore
         set this.ownerAfter = ownerAfter
+        set this.message = message
 
         return this
     endmethod
@@ -124,34 +126,6 @@ library MapData
             return 0
         endmethod
 
-        public static method getAttackAnimationIndex takes integer unitTypeId returns integer
-            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
-                return 2
-            elseif (unitTypeId == 'z001') then
-                return 3
-            endif
-
-            return 0
-        endmethod
-
-        public static method getDeathAnimationIndex takes integer unitTypeId returns integer
-            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
-                return 3
-            elseif (unitTypeId == 'z001') then
-                return 4
-            endif
-
-            return 0
-        endmethod
-
-        public static method getRepairAnimationIndex takes integer unitTypeId returns integer
-            if (unitTypeId == 'h005') then
-                return 3
-            endif
-
-            return 0
-        endmethod
-
         public static method getWalkAnimationDuration takes integer unitTypeId returns real
             if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 0.833
@@ -160,6 +134,16 @@ library MapData
             endif
 
             return 0.0
+        endmethod
+
+        public static method getAttackAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
+                return 2
+            elseif (unitTypeId == 'z001') then
+                return 3
+            endif
+
+            return 0
         endmethod
 
         public static method getAttackAnimationDuration takes integer unitTypeId returns real
@@ -172,14 +156,36 @@ library MapData
             return 0.0
         endmethod
 
+        public static method getDeathAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
+                return 3
+            elseif (unitTypeId == 'z001') then
+                return 4
+            elseif (unitTypeId == 'n001') then
+                return 4
+            endif
+
+            return 0
+        endmethod
+
         public static method getDeathAnimationDuration takes integer unitTypeId returns real
             if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 1.7
             elseif (unitTypeId == 'z001') then
                 return 2.0
+            elseif (unitTypeId == 'n001') then
+                return 2.333
             endif
 
             return 0.0
+        endmethod
+
+        public static method getRepairAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'h005') then
+                return 3
+            endif
+
+            return 0
         endmethod
 
         public static method getRepairAnimationDuration takes integer unitTypeId returns real
@@ -369,15 +375,22 @@ interface TimeObject
     public method onRestore takes integer time returns nothing
     /**
      * Called when the object is stopped being restored since the time goes into the same direction as the object again.
+     * This is only called if the current time is after the object's start time!
      */
-    public method onStopRestoring takes integer time returns nothing
+    public method onTimeInvertsSame takes integer time returns nothing
     /**
      * Called when the global time changes its direction contrary to the objects time direction.
      */
-    public method onInitialInvert takes boolean globalTimeInverted returns nothing
+    public method onTimeInvertsDifferent takes integer time returns nothing
 endinterface
 
 interface Time
+
+    /**
+     * Calls setTime but based on a seconds value for the ingame time.
+     */
+    public method setTimeBySeconds takes real seconds returns nothing
+
     /**
      * Changes the time and restores all objects which go into the opposite direction for their given time frames.
      * For objects which go into the same direction it stores the information.
@@ -405,6 +418,7 @@ interface Time
     public method addItem takes boolean inverted, item whichItem returns TimeObject
     public method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
     public method addTimer takes boolean inverted, timer whichTimer returns TimeObject
+    public method addPlayer takes boolean inverted, player whichPlayer returns TimeObject
     /**
      * Returns a group since the unit might contain transported units which will be inverted as well.
      */
@@ -793,6 +807,10 @@ struct ChangeEventUnitAlive extends ChangeEventUnit
 
 endstruct
 
+/*
+ * To make this work the unit type needs the field "Combat - Death Type" to be set to either "Can raise. Does decay" or "Can raise. Does not decay" or it has to be a hero.
+ * Otherwise, the unit type cannot be ressurrected.
+ */
 struct ChangeEventUnitDead extends ChangeEventUnit
 
     public stub method onChange takes integer time returns nothing
@@ -1156,6 +1174,23 @@ struct ChangeEventTimerProgress extends ChangeEventImpl
     endmethod
 endstruct
 
+struct ChangeEventPlayerChats extends ChangeEventImpl
+    private player whichPlayer
+    private string message
+
+    public stub method restore takes nothing returns nothing
+        // TODO How do we know if the player chatted to allies or not
+        call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, ReverseString(message))
+    endmethod
+
+    public static method create takes player whichPlayer, string message returns thistype
+        local thistype this = thistype.allocate()
+        set this.whichPlayer = whichPlayer
+        set this.message = message
+        return this
+    endmethod
+endstruct
+
 struct TimeFrameImpl extends TimeFrame
     private ChangeEventImpl changeEventsHead = 0
 
@@ -1410,7 +1445,7 @@ struct TimeObjectImpl extends TimeObject
             call this.getTimeLine().flushAllFrom(time)
         // stop recording changes and restore if possible
         else
-            call this.onInitialInvert(inverted)
+            call this.onTimeInvertsDifferent(time)
             call this.stopRecordingChanges(time)
             call this.getTimeLine().restore(this, time)
         endif
@@ -1430,10 +1465,10 @@ struct TimeObjectImpl extends TimeObject
     public stub method onRestore takes integer time returns nothing
     endmethod
 
-    public stub method onStopRestoring takes integer time returns nothing
+    public stub method onTimeInvertsSame takes integer time returns nothing
     endmethod
 
-    public stub method onInitialInvert takes boolean globalTimeInverted returns nothing
+    public stub method onTimeInvertsDifferent takes integer time returns nothing
     endmethod
 
     public static method create takes integer startTime, boolean inverted returns thistype
@@ -1463,7 +1498,7 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
         //call PrintMsg("recordChanges for time of day")
     endmethod
 
-    public stub method onStopRestoring takes integer time returns nothing
+    public stub method onTimeInvertsSame takes integer time returns nothing
         call this.startRecordingChanges(time)
     endmethod
 
@@ -1493,7 +1528,7 @@ struct TimeObjectMusic extends TimeObjectImpl
         //call PrintMsg("recordChanges for music")
     endmethod
 
-    public stub method onStopRestoring takes integer time returns nothing
+    public stub method onTimeInvertsSame takes integer time returns nothing
         call this.startRecordingChanges(time)
     endmethod
 
@@ -1528,7 +1563,7 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         //call PrintMsg("recordChanges for music")
     endmethod
 
-    public stub method onStopRestoring takes integer time returns nothing
+    public stub method onTimeInvertsSame takes integer time returns nothing
         call this.startRecordingChanges(time)
     endmethod
 
@@ -1590,7 +1625,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method shouldStopRecordingChanges takes nothing returns boolean
-        return GetUnitCurrentOrder(this.whichUnit) == String2OrderIdBJ("none")
+        return not this.isBeingConstructed and GetUnitCurrentOrder(this.whichUnit) == String2OrderIdBJ("none")
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -1620,7 +1655,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
     endmethod
 
-    public stub method onInitialInvert takes boolean globalTimeInverted returns nothing
+    public stub method onTimeInvertsDifferent takes integer time returns nothing
         call IssueImmediateOrderBJ(this.whichUnit, "stop")
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
     endmethod
@@ -1835,7 +1870,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public method cancelConstruction takes nothing returns nothing
-        //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
+        call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
         call this.stopRecordingChanges(globalTime.getTime())
         set this.isBeingConstructed = false
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitCancelConstruction.create(this.getUnit()))
@@ -1857,7 +1892,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public method finishConstruction takes nothing returns nothing
-        //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
+        call PrintMsg("Finish construction of " + GetUnitName(this.getUnit()))
         call this.stopRecordingChanges(globalTime.getTime())
         set this.isBeingConstructed = false
     endmethod
@@ -2136,7 +2171,7 @@ struct TimeObjectTimer extends TimeObjectImpl
         return "Timer with handle ID " + I2S(GetHandleId(whichTimer)) + super.getName()
     endmethod
 
-    public stub method onStopRestoring takes integer time returns nothing
+    public stub method onTimeInvertsSame takes integer time returns nothing
         call StartTimerBJ(whichTimer, false, TimerGetRemaining(whichTimer))
         call this.startRecordingChanges(time)
     endmethod
@@ -2171,6 +2206,48 @@ struct TimeObjectTimer extends TimeObjectImpl
     endmethod
 endstruct
 
+struct TimeObjectPlayer extends TimeObjectImpl
+    private player whichPlayer
+    private trigger chatTrigger
+
+    public method addChangeEventChatMessage takes integer time, string message returns nothing
+        call this.addChangeEvent(time, ChangeEventPlayerChats.create(this.whichPlayer, message))
+    endmethod
+
+    private static method triggerFunctionChatEvent takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.addChangeEventChatMessage(globalTime.getTime(), GetEventPlayerChatString())
+    endmethod
+
+    public static method create takes player whichPlayer, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichPlayer = whichPlayer
+
+        set this.chatTrigger = CreateTrigger()
+        call TriggerRegisterPlayerChatEvent(this.chatTrigger, whichPlayer, "", false)
+        call TriggerAddAction(this.chatTrigger, function thistype.triggerFunctionChatEvent)
+        call SaveData(this.chatTrigger, this)
+
+        call SaveData(whichPlayer, this)
+
+        return this
+    endmethod
+
+    public method onDestroy takes nothing returns nothing
+        call FlushData(this.chatTrigger)
+        call DestroyTrigger(this.chatTrigger)
+        set this.chatTrigger = null
+
+        call FlushData(this.whichPlayer)
+        set this.whichPlayer = null
+    endmethod
+
+    public static method fromPlayer takes player whichPlayer returns thistype
+        return LoadData(whichPlayer)
+    endmethod
+
+endstruct
+
 struct TimeImpl extends Time
     private integer time = 0
     private boolean inverted = false
@@ -2181,6 +2258,10 @@ struct TimeImpl extends Time
     private integer normalObjectsSize = 0
     private integer timeInvertedObjectsSize = 0
     private timer whichTimer
+
+    public stub method setTimeBySeconds takes real seconds returns nothing
+        call this.setTime(R2I(seconds / TIMER_PERIODIC_INTERVAL))
+    endmethod
 
     public stub method setTime takes integer time returns nothing
         local integer i = 0
@@ -2231,20 +2312,29 @@ struct TimeImpl extends Time
         local integer i = 0
         local TimeObject timeObject = 0
         local TimeLine timeLine = 0
+        local boolean sameDirection = false
+        local boolean doesAlreadyExist = false
         set this.inverted = inverted
         set i = 0
         loop
             exitwhen (i == this.getObjectsSize())
             set timeObject = this.timeObjects[i]
+            set sameDirection = timeObject.isInverted() == this.isInverted()
+            // TODO Check if the current time is after the startTime of the time object
+            //set doesAlreadyExist = timeObject.isInverted() and sameDirection
             // flush all changes from now
-            if (timeObject.isInverted() == this.isInverted()) then
+            if (sameDirection) then
                 call timeObject.getTimeLine().flushAllFrom(time)
-                call timeObject.onStopRestoring(time)
+                if (doesAlreadyExist) then
+                    call timeObject.onTimeInvertsSame(time)
+                endif
             // stop recording changes and restore if possible
             else
-                call timeObject.onInitialInvert(inverted)
-                call timeObject.stopRecordingChanges(time)
-                call timeObject.getTimeLine().restore(this, time)
+                if (doesAlreadyExist) then
+                    call timeObject.onTimeInvertsDifferent(time)
+                    call timeObject.stopRecordingChanges(time)
+                    call timeObject.getTimeLine().restore(this, time)
+                endif
             endif
             set i = i + 1
         endloop
@@ -2357,6 +2447,16 @@ struct TimeImpl extends Time
 
     public stub method addTimer takes boolean inverted, timer whichTimer returns TimeObject
         local TimeObjectTimer result = TimeObjectTimer.create(whichTimer, this.getTime(), inverted)
+        call this.addObject(result)
+        if (this.isInverted() == result.isInverted()) then
+            call result.onExists(this.getTime())
+        endif
+
+        return result
+    endmethod
+
+    public stub method addPlayer takes boolean inverted, player whichPlayer returns TimeObject
+        local TimeObjectPlayer result = TimeObjectPlayer.create(whichPlayer, this.getTime(), inverted)
         call this.addObject(result)
         if (this.isInverted() == result.isInverted()) then
             call result.onExists(this.getTime())
@@ -3622,6 +3722,10 @@ endlibrary
 
 library CopyItem
 
+    private function PrintMsg takes string msg returns nothing
+        call DisplayTextToForce(GetPlayersAll(), msg)
+    endfunction
+
     function CopyItemApply takes item whichItem, item result returns nothing
         call SetItemVisible(result, IsItemVisible(whichItem))
         call SetItemCharges(result, GetItemCharges(whichItem))
@@ -3635,12 +3739,13 @@ library CopyItem
         endif
         call SetWidgetLife(result, GetWidgetLife(whichItem))
         // TODO
-        call SetItemDroppable(result, true)
+        //call SetItemDroppable(result, true)
         //SetItemDropOnDeath
         call BlzSetItemName(result, GetItemName(whichItem))
         call BlzSetItemTooltip(result, BlzGetItemTooltip(whichItem))
         call BlzSetItemDescription(result, BlzGetItemDescription(whichItem))
         call BlzSetItemExtendedTooltip(result, BlzGetItemExtendedTooltip(whichItem))
+        /*
         // TODO
         //call BlzSetItemIconPath(result, BlzGetItemStringField(whichItem, ITEM_SF_MODEL_USED))
         call BlzSetItemSkin(result, BlzGetItemSkin(whichItem))
@@ -3664,6 +3769,7 @@ library CopyItem
         call BlzSetItemIntegerFieldBJ(result, ITEM_IF_TINTING_COLOR_ALPHA, BlzGetItemIntegerField(whichItem, ITEM_IF_TINTING_COLOR_ALPHA))
         call BlzSetItemRealFieldBJ(result, ITEM_RF_SCALING_VALUE, BlzGetItemRealField(whichItem, ITEM_RF_SCALING_VALUE))
         call BlzSetItemStringFieldBJ(result, ITEM_SF_MODEL_USED, BlzGetItemStringField(whichItem, ITEM_SF_MODEL_USED))
+        */
     endfunction
 
     function CopyItem takes item whichItem, real x, real y returns item
