@@ -292,6 +292,35 @@ function PrintMsg takes string msg returns nothing
     call DisplayTextToForce(GetPlayersAll(), msg)
 endfunction
 
+function PlayerColorToString takes playercolor playerColor returns string
+    if (playerColor == PLAYER_COLOR_RED) then
+        return "ff0000"
+    elseif (playerColor == PLAYER_COLOR_BLUE) then
+        return "0000ff"
+    elseif (playerColor == PLAYER_COLOR_CYAN) then
+        return "1cb619"
+    elseif (playerColor == PLAYER_COLOR_PURPLE) then
+        return "800080"
+    elseif (playerColor == PLAYER_COLOR_YELLOW) then
+        return "ffff00"
+    elseif (playerColor == PLAYER_COLOR_ORANGE) then
+        return "ff8000"
+    elseif (playerColor == PLAYER_COLOR_GREEN) then
+        return "00ff00"
+    elseif (playerColor == PLAYER_COLOR_PINK) then
+        return "ff80c0"
+    elseif (playerColor == PLAYER_COLOR_LIGHT_GRAY) then
+        return "c0c0c0"
+    elseif (playerColor == PLAYER_COLOR_LIGHT_BLUE) then
+        return "0080ff"
+    elseif (playerColor == PLAYER_COLOR_AQUA) then
+        return "106246"
+    elseif (playerColor == PLAYER_COLOR_BROWN) then
+        return "804000"
+    endif
+    return "ffffff"
+endfunction
+
 endlibrary
 
 library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit, UnitProgress
@@ -1180,7 +1209,7 @@ struct ChangeEventPlayerChats extends ChangeEventImpl
 
     public stub method restore takes nothing returns nothing
         // TODO How do we know if the player chatted to allies or not
-        call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, ReverseString(message))
+        call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, ReverseString(message) + "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + ReverseString(GetPlayerName(whichPlayer) +":") + "|r ")
     endmethod
 
     public static method create takes player whichPlayer, string message returns thistype
@@ -1870,7 +1899,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public method cancelConstruction takes nothing returns nothing
-        call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
         call this.stopRecordingChanges(globalTime.getTime())
         set this.isBeingConstructed = false
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitCancelConstruction.create(this.getUnit()))
