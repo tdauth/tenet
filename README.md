@@ -43,15 +43,3 @@ Then the players can go forward and pick it up before it is picked up by the inv
 ## Videos
 
 [Video of an early version of the scenario on YouTube](https://www.youtube.com/watch?v=qVlEL9Wzz_Y)
-
-## TODOs
-
-* Maybe limit the number of possible copies or maybe simplify the concept of inversion by not copying someone who goes through the gate?
-* Fix all bugs (see triggers TODO)
-* Support picking up and dropping an item.
-* Support buying and selling an item.
-* Support using and moving an item in the inventory.
-* Try to play with 4 players and improve the scenario to improve its structure.
-* Test the tanks and the tank factory on training support.
-* Add a hydralisk factory.
-* Add intro video with helicopters bringing and taking the red and the blue team.

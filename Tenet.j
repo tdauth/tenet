@@ -22,13 +22,15 @@ library MapEvents initializer Init requires Tenet
         endmethod
 
         public stub method restore takes nothing returns nothing
+            local ReverseStringFunctionInterface r = GetCustomReverseString()
+            local integer i = 0
+            loop
+                exitwhen (i == bj_MAX_PLAYERS)
+                call DisplayTextToPlayer(Player(i), 0.0, 0.0, r.evaluate(message, Player(i)))
+                set i = i + 1
+            endloop
             call SetUnitOwner(circleOfPower, ownerBefore, true)
             call PlaySoundBJ(invertedConquerSound)
-            if (IsPlayerInForce(ownerAfter, udg_GoodGuys)) then
-                call DisplayTextToForce(GetPlayersAll(), ReverseString(message))
-            else
-                call DisplayTextToForce(GetPlayersAll(), ReverseString(message))
-            endif
         endmethod
 
     public static method create takes sound invertedConquerSound, unit circleOfPower, player ownerBefore, player ownerAfter, string message returns thistype
@@ -99,11 +101,20 @@ library MapEvents initializer Init requires Tenet
         TimeObjectTrain train = 0
     endglobals
 
+    private function CustomReverseString takes string message, player whichPlayer returns string
+        if (GetPlayerTechCountSimple('R006', whichPlayer) > 0 ) then
+            return "|cff00ff00Encoded message:|r " + message
+        else
+            return ReverseString(message, whichPlayer)
+        endif
+    endfunction
+
     private function Init takes nothing returns nothing
         set turnstileMachine = TimeObjectTurnstileMachine.create(0, false)
         set train = TimeObjectTrain.create(0, false)
         call globalTime.addObject(turnstileMachine)
         call globalTime.addObject(train)
+        call RegisterCustomReverseString(CustomReverseString)
     endfunction
 
 endlibrary
@@ -323,9 +334,24 @@ endfunction
 
 endlibrary
 
-library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit, UnitProgress
+library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit, UnitProgress, StateDetection
 
-function ReverseString takes string whichString returns string
+globals
+    private ReverseStringFunctionInterface reverseStringFunction = 0
+    constant real TIMER_PERIODIC_INTERVAL = 0.10
+endglobals
+
+function interface ReverseStringFunctionInterface takes string whichString, player whichPlayer returns string
+
+function RegisterCustomReverseString takes ReverseStringFunctionInterface reverseStringFunction returns nothing
+    set reverseStringFunction = reverseStringFunction
+endfunction
+
+function GetCustomReverseString takes nothing returns ReverseStringFunctionInterface
+    return reverseStringFunction
+endfunction
+
+function ReverseString takes string whichString, player whichPlayer returns string
     local string result = ""
     local integer i = StringLength(whichString)
     loop
@@ -335,10 +361,6 @@ function ReverseString takes string whichString returns string
     endloop
     return result
 endfunction
-
-globals
-    constant real TIMER_PERIODIC_INTERVAL = 0.10
-endglobals
 
 interface ChangeEvent
     public method onChange takes integer time returns nothing
@@ -375,7 +397,11 @@ interface TimeObject
     public method isInverted takes nothing returns boolean
     public method getTimeLine takes nothing returns TimeLine
 
-    public method onExists takes integer time returns nothing
+    /**
+     * This should implement the initial existence of an object to make sure it is in the state it was when it was initially added to the time.
+     * It can be called multiple times, so its effect should be idempotent.
+     */
+    public method onExists takes integer time, boolean timeIsInverted returns nothing
 
     public method startRecordingChanges takes integer time returns nothing
     public method stopRecordingChanges takes integer time returns nothing
@@ -717,34 +743,6 @@ struct ChangeEventUnitLevel extends ChangeEventUnit
 
 endstruct
 
-struct ChangeEventUnitHp extends ChangeEventUnit
-    private real hp
-
-    public stub method onChange takes integer time returns nothing
-        set this.hp = GetUnitState(this.getUnit(), UNIT_STATE_LIFE)
-    endmethod
-
-    public stub method restore takes nothing returns nothing
-        //call PrintMsg("|cff00ff00Hurray: Restore unit life for " + GetUnitName(this.getUnit()) + "|r")
-        call SetUnitLifeBJ(this.getUnit(), this.hp)
-    endmethod
-
-endstruct
-
-struct ChangeEventUnitMana extends ChangeEventUnit
-    private real mana
-
-    public stub method onChange takes integer time returns nothing
-        set this.mana = GetUnitState(this.getUnit(), UNIT_STATE_MANA)
-    endmethod
-
-    public stub method restore takes nothing returns nothing
-        //call PrintMsg("|cff00ff00Hurray: Restore unit mana for " + GetUnitName(this.getUnit()) + "|r")
-        call SetUnitManaBJ(this.getUnit(), this.mana)
-    endmethod
-
-endstruct
-
 struct ChangeEventUnitPickupItem extends ChangeEventUnit
     private item whichItem
 
@@ -838,7 +836,8 @@ endstruct
 
 /*
  * To make this work the unit type needs the field "Combat - Death Type" to be set to either "Can raise. Does decay" or "Can raise. Does not decay" or it has to be a hero.
- * Otherwise, the unit type cannot be ressurrected.
+ * Otherwise, the unit type cannot be resurrected.
+ * TODO Recreate buildings instead of resurrecting them. Try it on summoned units.
  */
 struct ChangeEventUnitDead extends ChangeEventUnit
 
@@ -925,7 +924,7 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        //call PrintMsg("|cff00ff00Hurray: Restore that unit did not exist for " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore that unit did not exist for " + GetUnitName(this.getUnit()) + " with start time " + I2S(TimeObjectUnit.fromUnit(this.getUnit()).getStartTime()) + "|r")
         call thistype.apply(this.getUnit())
     endmethod
 
@@ -1018,6 +1017,22 @@ struct ChangeEventUnitCancelConstruction extends ChangeEventUnit
 
     public static method create takes unit whichUnit returns thistype
         local thistype this = thistype.allocate(whichUnit)
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitMana extends ChangeEventUnit
+    private real previousMana
+
+    public stub method restore takes nothing returns nothing
+        //call PrintMsg("Restoring mana " + R2S(previousMana) + " for unit " + GetUnitName(this.getUnit()))
+        call SetUnitManaBJ(this.getUnit(), previousMana)
+    endmethod
+
+    public static method create takes unit whichUnit, real previousMana returns thistype
+        local thistype this = thistype.allocate(whichUnit)
+        set this.previousMana = previousMana
         return this
     endmethod
 
@@ -1207,9 +1222,19 @@ struct ChangeEventPlayerChats extends ChangeEventImpl
     private player whichPlayer
     private string message
 
+    // TODO How do we know if the player chatted to allies or not
     public stub method restore takes nothing returns nothing
-        // TODO How do we know if the player chatted to allies or not
-        call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, ReverseString(message) + "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + ReverseString(GetPlayerName(whichPlayer) +":") + "|r ")
+        local ReverseStringFunctionInterface r = GetCustomReverseString()
+        local integer i = 0
+        loop
+            exitwhen (i == bj_MAX_PLAYERS)
+            if (r.evaluate(message, Player(i)) != message) then
+                call DisplayTextToPlayer(Player(i), 0.0, 0.0, r.evaluate(message, Player(i)) + "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + r.evaluate(GetPlayerName(whichPlayer) + ": ", Player(i)) + "|r ")
+            else
+                call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ": " + message)
+            endif
+            set i = i + 1
+        endloop
     endmethod
 
     public static method create takes player whichPlayer, string message returns thistype
@@ -1255,7 +1280,7 @@ struct TimeFrameImpl extends TimeFrame
 
     public stub method restore takes TimeObject timeObject, integer time returns nothing
         if (this.changeEventsHead != 0) then
-            //call PrintMsg("Restore events with size: " + I2S(this.getChangeEventsSize()))
+            //call PrintMsg("Restore events with size: " + I2S(this.getChangeEventsSize()) + " at time " + I2S(time))
             call this.changeEventsHead.traverseBackwards()
             // The head element is excluded from traverseBackwards
             call this.changeEventsHead.onTraverse(this.changeEventsHead)
@@ -1414,7 +1439,7 @@ struct TimeObjectImpl extends TimeObject
         return this.timeLine
     endmethod
 
-    public stub method onExists takes integer time returns nothing
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
     endmethod
 
     public stub method startRecordingChanges takes integer time returns nothing
@@ -1518,8 +1543,10 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
         return "time of day " + super.getName()
     endmethod
 
-    public stub method onExists takes integer time returns nothing
-        call this.startRecordingChanges(time)
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
+        if (not timeIsInverted) then
+            call this.startRecordingChanges(time)
+        endif
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -1547,8 +1574,10 @@ struct TimeObjectMusic extends TimeObjectImpl
         return "music " + super.getName()
     endmethod
 
-    public stub method onExists takes integer time returns nothing
-        call this.startRecordingChanges(time)
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
+        if (not timeIsInverted) then
+            call this.startRecordingChanges(time)
+        endif
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -1580,10 +1609,12 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         return "music inverted " + super.getName()
     endmethod
 
-    public stub method onExists takes integer time returns nothing
-        call this.startRecordingChanges(time)
-        // initial event to change the music forward
-        call this.recordChanges(time)
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
+        if (timeIsInverted) then
+            call this.startRecordingChanges(time)
+            // initial event to change the music forward
+            call this.recordChanges(time)
+        endif
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
@@ -1642,12 +1673,14 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger cancelRevivingTrigger
     // TODO Add all trained units as objects to the map.
     private trigger finishRevivingTrigger
+    private trigger manaTrigger
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
     endmethod
 
-    public stub method onExists takes integer time returns nothing
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
+        //call PrintMsg("Calling onExists for " + this.getName() + " at time " + I2S(time))
         // adding these two change events will lead to hiding and pausing the unit before it existed
         call this.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
         call ChangeEventUnitExists.apply(this.whichUnit)
@@ -1674,7 +1707,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         endif
 
         if (isBeingConstructed) then
-            call PrintMsg("Add construction change event " + GetUnitName(this.getUnit()))
+            //call PrintMsg("Add construction change event " + GetUnitName(this.getUnit()))
             call this.addChangeEvent(time, ChangeEventUnitConstructionProgress.create(whichUnit, constructionStartTime))
         endif
     endmethod
@@ -1687,6 +1720,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     public stub method onTimeInvertsDifferent takes integer time returns nothing
         call IssueImmediateOrderBJ(this.whichUnit, "stop")
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
+        // TODO Disable mana and life regeneration of the unit
     endmethod
 
     public method getUnit takes nothing returns unit
@@ -1895,7 +1929,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.isBeingConstructed = true
         set this.constructionStartTime = globalTime.getTime()
         call this.startRecordingChanges(this.constructionStartTime)
-        call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
     endmethod
 
     public method cancelConstruction takes nothing returns nothing
@@ -1934,6 +1968,18 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionFinishConstruction takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         call this.finishConstruction()
+    endmethod
+
+    private static method triggerConditionChangeMana takes nothing returns boolean
+        local thistype this = LoadData(GetTriggeringTrigger())
+
+        return this.isInverted() == globalTime.isInverted()
+    endmethod
+
+    private static method triggerFunctionChangeMana takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        //call PrintMsg("|cff00ff00Hurray: Adding mana event with " + GetUnitName(GetStateChangingUnit()) + " with handle ID " + I2S(GetHandleId(GetStateChangingUnit())) + "|r")
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitMana.create(GetStateChangingUnit(), GetPreviousStateValue()))
     endmethod
 
     public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
@@ -2025,6 +2071,12 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.finishConstructionTrigger, function thistype.triggerFunctionFinishConstruction)
         call SaveData(this.finishConstructionTrigger, this)
 
+        set this.manaTrigger = CreateTrigger()
+        call TriggerRegisterUnitStateChangesEvent(this.manaTrigger, this.getUnit(), UNIT_STATE_MANA)
+        call TriggerAddCondition(this.manaTrigger, Condition(function thistype.triggerConditionChangeMana))
+        call TriggerAddAction(this.manaTrigger, function thistype.triggerFunctionChangeMana)
+        call SaveData(this.manaTrigger, this)
+
         call SaveData(this.whichUnit, this)
 
         return this
@@ -2093,6 +2145,10 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.finishConstructionTrigger)
         call DestroyTrigger(this.finishConstructionTrigger)
         set this.finishConstructionTrigger = null
+
+        call FlushData(this.manaTrigger)
+        call DestroyTrigger(this.manaTrigger)
+        set this.manaTrigger = null
     endmethod
 
     public static method fromUnit takes unit whichUnit returns thistype
@@ -2108,7 +2164,7 @@ struct TimeObjectItem extends TimeObjectImpl
         return GetItemName(this.whichItem) + super.getName()
     endmethod
 
-    public stub method onExists takes integer time returns nothing
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
         // adding these two change events will lead to hiding and pausing the unit before it existed
         call this.addTwoChangeEventsNextToEachOther(time, ChangeEventItemExists.create(whichItem), ChangeEventItemDoesNotExist.create(whichItem))
         call ChangeEventItemExists.apply(this.whichItem)
@@ -2141,7 +2197,7 @@ struct TimeObjectDestructable extends TimeObjectImpl
         return GetDestructableName(whichDestructable) + super.getName()
     endmethod
 
-    public stub method onExists takes integer time returns nothing
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
         // adding these two change events will lead to hiding and pausing the destructable before it existed
         call this.addTwoChangeEventsNextToEachOther(time, ChangeEventDestructableExists.create(whichDestructable), ChangeEventDestructableDoesNotExist.create(whichDestructable))
         call ChangeEventDestructableExists.apply(this.whichDestructable)
@@ -2205,7 +2261,7 @@ struct TimeObjectTimer extends TimeObjectImpl
         call this.startRecordingChanges(time)
     endmethod
 
-    public stub method onExists takes integer time returns nothing
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
         call StartTimerBJ(whichTimer, false, timeout)
         call this.startRecordingChanges(time)
     endmethod
@@ -2281,8 +2337,8 @@ struct TimeImpl extends Time
     private integer time = 0
     private boolean inverted = false
     // TODO Use ListEx or something to avoid limitations.
-    private static constant integer MAX_TIME_OBJECTS = 100
-    private TimeObject array timeObjects[100]
+    private static constant integer MAX_TIME_OBJECTS = 500
+    private TimeObject array timeObjects[500]
     private integer timeObjectsSize = 0
     private integer normalObjectsSize = 0
     private integer timeInvertedObjectsSize = 0
@@ -2296,6 +2352,7 @@ struct TimeImpl extends Time
         local integer i = 0
         local TimeObject timeObject = 0
         local TimeLine timeLine = 0
+        local boolean moreThanOneTick = IAbsBJ(this.getTime() - time) > 1
         set this.time = time
         set i = 0
         loop
@@ -2309,9 +2366,10 @@ struct TimeImpl extends Time
                 call timeObject.onRestore(time)
                 call timeLine.restore(timeObject, time)
             else
-                // TODO Check if the time is AFTER the start time as well and if the onExist has not been called before, otherwise the whole onExist calls are missing!!!!
-                if (time == timeObject.getStartTime()) then
-                    call timeObject.onExists(time)
+                // This might lead to calling onExists multiple times but makes absolutely sure that the object does exist!
+                // Call onExists if it is multiple ticks and the start time was in that range or for one tick if its exactly the start time.
+                if ((moreThanOneTick and (timeObject.isInverted() and time <= timeObject.getStartTime()) or (not timeObject.isInverted() and time >= timeObject.getStartTime())) or (not moreThanOneTick and (timeObject.isInverted() and time == timeObject.getStartTime()) or (not timeObject.isInverted() and time == timeObject.getStartTime()))) then
+                    call timeObject.onExists(time, this.isInverted())
                 endif
 
                 if (timeObject.isRecordingChanges()) then
@@ -2349,8 +2407,7 @@ struct TimeImpl extends Time
             exitwhen (i == this.getObjectsSize())
             set timeObject = this.timeObjects[i]
             set sameDirection = timeObject.isInverted() == this.isInverted()
-            // TODO Check if the current time is after the startTime of the time object
-            //set doesAlreadyExist = timeObject.isInverted() and sameDirection
+            set doesAlreadyExist = (timeObject.isInverted() and this.getTime() <= timeObject.getStartTime()) or (not timeObject.isInverted() and this.getTime() >= timeObject.getStartTime())
             // flush all changes from now
             if (sameDirection) then
                 call timeObject.getTimeLine().flushAllFrom(time)
@@ -2371,7 +2428,7 @@ struct TimeImpl extends Time
 
     public stub method addObject takes TimeObject timeObject returns integer
         if (this.getObjectsSize() >= thistype.MAX_TIME_OBJECTS) then
-            //call PrintMsg("Adding a time object when reached maximum of time objects with " + I2S(this.getObjectsSize()) + " when adding time object " + timeObject.getName())
+            call PrintMsg("Adding a time object when reached maximum of time objects with " + I2S(this.getObjectsSize()) + " when adding time object " + timeObject.getName())
         endif
 
         if (timeObject.isInverted()) then
@@ -2382,6 +2439,9 @@ struct TimeImpl extends Time
 
         set this.timeObjects[this.timeObjectsSize] = timeObject
         set this.timeObjectsSize = this.timeObjectsSize + 1
+
+        // adds the initial existence events
+        call timeObject.onExists(this.getTime(), this.isInverted())
 
         return this.timeObjectsSize - 1
     endmethod
@@ -2426,8 +2486,8 @@ struct TimeImpl extends Time
 
     public stub method addTimeOfDay takes nothing returns TimeObject
         local TimeObjectTimeOfDay timeObjectTimeOfDay = TimeObjectTimeOfDay.create(this.getTime(), false)
-        return this.addObject(timeObjectTimeOfDay)
-        call timeObjectTimeOfDay.onExists(this.getTime())
+        call this.addObject(timeObjectTimeOfDay)
+
         return timeObjectTimeOfDay
     endmethod
 
@@ -2435,21 +2495,12 @@ struct TimeImpl extends Time
         local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this.getTime(), this, whichMusic, whichMusicInverted)
         local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this.getTime(), this, whichMusic, whichMusicInverted)
         call this.addObject(timeObjectMusic)
-        if (this.isInverted() == timeObjectMusic.isInverted()) then
-            call timeObjectMusic.onExists(this.getTime())
-        endif
         call this.addObject(timeObjectMusicInverted)
-        if (this.isInverted() == timeObjectMusicInverted.isInverted()) then
-            call timeObjectMusicInverted.onExists(this.getTime())
-        endif
     endmethod
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
         local TimeObjectUnit result = TimeObjectUnit.create(whichUnit, this.getTime(), inverted)
         call this.addObject(result)
-        if (this.isInverted() == result.isInverted()) then
-            call result.onExists(this.getTime())
-        endif
 
         return result
     endmethod
@@ -2457,9 +2508,6 @@ struct TimeImpl extends Time
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
         local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
         call this.addObject(result)
-        if (this.isInverted() == result.isInverted()) then
-            call result.onExists(this.getTime())
-        endif
 
         return result
     endmethod
@@ -2467,9 +2515,6 @@ struct TimeImpl extends Time
     public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
         local TimeObjectDestructable result = TimeObjectDestructable.create(whichDestructable, this.getTime(), inverted)
         call this.addObject(result)
-        if (this.isInverted() == result.isInverted()) then
-            call result.onExists(this.getTime())
-        endif
 
         return result
     endmethod
@@ -2477,9 +2522,6 @@ struct TimeImpl extends Time
     public stub method addTimer takes boolean inverted, timer whichTimer returns TimeObject
         local TimeObjectTimer result = TimeObjectTimer.create(whichTimer, this.getTime(), inverted)
         call this.addObject(result)
-        if (this.isInverted() == result.isInverted()) then
-            call result.onExists(this.getTime())
-        endif
 
         return result
     endmethod
@@ -2487,9 +2529,6 @@ struct TimeImpl extends Time
     public stub method addPlayer takes boolean inverted, player whichPlayer returns TimeObject
         local TimeObjectPlayer result = TimeObjectPlayer.create(whichPlayer, this.getTime(), inverted)
         call this.addObject(result)
-        if (this.isInverted() == result.isInverted()) then
-            call result.onExists(this.getTime())
-        endif
 
         return result
     endmethod
@@ -2793,6 +2832,7 @@ endglobals
 
 private function Init takes nothing returns nothing
     set globalTime = TimeImpl.create()
+    call RegisterCustomReverseString(ReverseString)
 endfunction
 
 endlibrary
@@ -4235,5 +4275,109 @@ library UnitProgress initializer Init
         call TriggerRegisterAnyUnitEventBJ(deathTrigger, EVENT_PLAYER_UNIT_DEATH)
         call TriggerAddAction(deathTrigger, function TriggerFunctionDeath)
     endfunction
+
+endlibrary
+
+/**
+ * Library which supports detecting changes for player and unit states.
+ * Inspired by SinisterLuffy's post: https://www.hiveworkshop.com/threads/reverse-stuff.328500/#post-3458317
+ * TODO Change the system so one trigger can have multiple different events for different units and states and the event data will be updated properly.
+ * TODO Add unregister function which will finally clear the trigger for a unit if there are no triggers left for a specific state.
+ */
+library StateDetection
+
+globals
+    private constant real UNIT_STATE_THRESHOLD = 1.0
+    private constant integer KEY_UNIT = 0
+    private constant integer KEY_UNIT_STATE = 1
+    private constant integer KEY_UNIT_STATE_VALUE = 2
+
+    hashtable unitStateDetectionHashTable = InitHashtable()
+    trigger array unitStateDetectionTriggers
+    integer unitStateDetectionTriggersSize = 0
+endglobals
+
+private function PrintMsg takes string msg returns nothing
+    call DisplayTextToForce(GetPlayersAll(), msg)
+endfunction
+
+private function UnitState2I takes unitstate state returns integer
+    if (state == UNIT_STATE_LIFE) then
+        return 0
+    elseif (state == UNIT_STATE_MAX_LIFE) then
+        return 1
+    elseif (state == UNIT_STATE_MANA) then
+        return 2
+    elseif (state == UNIT_STATE_MAX_MANA) then
+        return 3
+    endif
+
+    return -1
+endfunction
+
+private keyword UpdateUnitStateDetectionTrigger
+
+private function TriggerConditionUnitStateDetection takes nothing returns boolean
+    local unitstate state = ConvertUnitState(LoadInteger(unitStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_UNIT_STATE))
+    local real current = GetUnitState(GetTriggerUnit(), state)
+    local integer i = 0
+    //call PrintMsg("Change state " + I2S(UnitState2I(state)) + " of unit " + GetUnitName(GetTriggerUnit()) + " with " + I2S(unitStateDetectionTriggersSize) + " triggers.")
+    loop
+        exitwhen (i == unitStateDetectionTriggersSize)
+        if (ConvertUnitState(LoadInteger(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT_STATE)) == state and LoadUnitHandle(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT) == GetTriggerUnit()) then
+            //call PrintMsg("One matching trigger with handle ID " + I2S(GetHandleId(unitStateDetectionTriggers[i])))
+            call TriggerExecute(unitStateDetectionTriggers[i])
+            call SaveReal(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT_STATE_VALUE, current) // update value
+        endif
+        set i = i + 1
+    endloop
+    call UpdateUnitStateDetectionTrigger.evaluate(GetTriggerUnit(), state)
+    return false
+endfunction
+
+private function UpdateUnitStateDetectionTrigger takes unit whichUnit, unitstate state returns nothing
+    local trigger whichTrigger = null
+    if (HaveSavedHandle(unitStateDetectionHashTable, GetHandleId(whichUnit), UnitState2I(state))) then
+        set whichTrigger = LoadTriggerHandle(unitStateDetectionHashTable, GetHandleId(whichUnit), UnitState2I(state))
+        call DisableTrigger(whichTrigger)
+        call DestroyTrigger(whichTrigger)
+        set whichTrigger = null
+    endif
+
+    set whichTrigger = CreateTrigger()
+    call TriggerRegisterUnitStateEvent(whichTrigger, whichUnit, state, LESS_THAN, GetUnitState(whichUnit, state) - UNIT_STATE_THRESHOLD)
+    call TriggerRegisterUnitStateEvent(whichTrigger, whichUnit, state, GREATER_THAN, GetUnitState(whichUnit, state) + UNIT_STATE_THRESHOLD)
+    call TriggerAddCondition(whichTrigger, Condition(function TriggerConditionUnitStateDetection))
+
+    call SaveInteger(unitStateDetectionHashTable, GetHandleId(whichTrigger), KEY_UNIT_STATE, UnitState2I(state))
+    call SaveTriggerHandle(unitStateDetectionHashTable, GetHandleId(whichUnit), UnitState2I(state), whichTrigger)
+endfunction
+
+function TriggerRegisterUnitStateChangesEvent takes trigger whichTrigger, unit whichUnit, unitstate state returns nothing
+    set unitStateDetectionTriggers[unitStateDetectionTriggersSize] = whichTrigger
+    set unitStateDetectionTriggersSize = unitStateDetectionTriggersSize + 1
+
+    call SaveUnitHandle(unitStateDetectionHashTable, GetHandleId(whichTrigger), KEY_UNIT, whichUnit)
+    call SaveInteger(unitStateDetectionHashTable, GetHandleId(whichTrigger), KEY_UNIT_STATE, UnitState2I(state))
+    call SaveReal(unitStateDetectionHashTable, GetHandleId(whichTrigger), KEY_UNIT_STATE_VALUE, GetUnitState(whichUnit, state)) // update value
+
+    call UpdateUnitStateDetectionTrigger(whichUnit, state)
+endfunction
+
+function GetChangingUnitState takes nothing returns unitstate
+    return ConvertUnitState(LoadInteger(unitStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_UNIT_STATE))
+endfunction
+
+function GetStateChangingUnit takes nothing returns unit
+    return LoadUnitHandle(unitStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_UNIT)
+endfunction
+
+function GetPreviousStateValue takes nothing returns real
+    return LoadReal(unitStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_UNIT_STATE_VALUE)
+endfunction
+
+function GetCurrentStateValue takes nothing returns real
+    return GetUnitState(GetStateChangingUnit(), GetChangingUnitState())
+endfunction
 
 endlibrary
