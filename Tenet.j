@@ -33,16 +33,16 @@ library MapEvents initializer Init requires Tenet
             call PlaySoundBJ(invertedConquerSound)
         endmethod
 
-    public static method create takes sound invertedConquerSound, unit circleOfPower, player ownerBefore, player ownerAfter, string message returns thistype
-        local thistype this = thistype.allocate()
-        set this.invertedConquerSound = invertedConquerSound
-        set this.circleOfPower = circleOfPower
-        set this.ownerBefore = ownerBefore
-        set this.ownerAfter = ownerAfter
-        set this.message = message
+        public static method create takes sound invertedConquerSound, unit circleOfPower, player ownerBefore, player ownerAfter, string message returns thistype
+            local thistype this = thistype.allocate()
+            set this.invertedConquerSound = invertedConquerSound
+            set this.circleOfPower = circleOfPower
+            set this.ownerBefore = ownerBefore
+            set this.ownerAfter = ownerAfter
+            set this.message = message
 
-        return this
-    endmethod
+            return this
+        endmethod
 
     endstruct
 
@@ -103,9 +103,9 @@ library MapEvents initializer Init requires Tenet
 
     private function CustomReverseString takes string message, player whichPlayer returns string
         if (GetPlayerTechCountSimple('R006', whichPlayer) > 0 ) then
-            return "|cff00ff00Encoded message:|r " + message
+            return "|cff00ff00Decoded inverted message:|r " + message
         else
-            return ReverseString(message, whichPlayer)
+            return ReverseStringExceptColorCodes(message)
         endif
     endfunction
 
@@ -343,20 +343,46 @@ endglobals
 
 function interface ReverseStringFunctionInterface takes string whichString, player whichPlayer returns string
 
-function RegisterCustomReverseString takes ReverseStringFunctionInterface reverseStringFunction returns nothing
-    set reverseStringFunction = reverseStringFunction
+function RegisterCustomReverseString takes ReverseStringFunctionInterface r returns nothing
+    set reverseStringFunction = r
 endfunction
 
 function GetCustomReverseString takes nothing returns ReverseStringFunctionInterface
     return reverseStringFunction
 endfunction
 
-function ReverseString takes string whichString, player whichPlayer returns string
+/**
+ * Reverses a string except its color codes.
+ */
+function ReverseString takes string whichString returns string
     local string result = ""
     local integer i = StringLength(whichString)
     loop
         exitwhen (i <= 0)
         set result = result + SubString(whichString, i - 1, i)
+        set i = i - 1
+    endloop
+    return result
+endfunction
+
+function ReverseStringExceptColorCodes takes string whichString returns string
+    local string result = ""
+    local integer colorCodeStartLength = StringLength("|c")
+    local integer colorCodeStartCompleteLength = StringLength("ffff0000")
+    local integer colorCodeEndLength = StringLength("|r")
+    local integer colorCodeEnd = -1 // excluding index
+    local integer i = StringLength(whichString)
+    loop
+        exitwhen (i <= 1)
+        if (i >= colorCodeStartLength and SubString(whichString, i - colorCodeStartLength, i) == "|c") then
+            set result = result + SubString(whichString, i - colorCodeStartLength, i + colorCodeStartCompleteLength + colorCodeStartLength) + ReverseString(SubString(whichString, i + colorCodeStartCompleteLength, colorCodeEnd - colorCodeEndLength)) + SubString(whichString, colorCodeEnd - colorCodeEndLength, colorCodeEnd)
+            set colorCodeEnd = -1
+        elseif (i >= colorCodeEndLength and SubString(whichString, i - colorCodeEndLength, i) == "|r") then
+            set colorCodeEnd = i
+        elseif (colorCodeEnd == -1) then
+            set result = result + SubString(whichString, i - 1, i)
+        endif
+
         set i = i - 1
     endloop
     return result
@@ -470,6 +496,7 @@ interface Time
     public method addTimeOfDay takes nothing returns TimeObject
     public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
     public method addUnit takes boolean inverted, unit whichUnit returns TimeObject
+    public method addGoldmine takes boolean inverted, unit whichUnit returns TimeObject
     public method addItem takes boolean inverted, item whichItem returns TimeObject
     public method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
     public method addTimer takes boolean inverted, timer whichTimer returns TimeObject
@@ -881,11 +908,16 @@ struct ChangeEventUnitDead extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
+        local unit newBuilding = null
         local unit caster = null
         //call PrintMsg("|cff00ff00Hurray: Restore unit death for " + GetUnitName(this.getUnit()) + "|r")
         if (IsUnitType(this.getUnit(), UNIT_TYPE_HERO)) then
             // TODO Is called again and again.
             call thistype.startTimer(this.getUnit(), 0.0, function thistype.timerFunctionReviveHero)
+        elseif (IsUnitType(this.getUnit(), UNIT_TYPE_STRUCTURE)) then
+            set newBuilding = CreateUnit(GetOwningPlayer(this.getUnit()), GetUnitTypeId(this.getUnit()), GetUnitX(this.getUnit()), GetUnitY(this.getUnit()), GetUnitFacing(this.getUnit()))
+            call TimeObjectUnit.fromUnit(this.getUnit()).replaceUnit(newBuilding)
+            call thistype.playDeathAnimationReverse(newBuilding)
         else
             set caster = CreateUnit(GetOwningPlayer(this.getUnit()), RESURRECT_UNIT_TYPE_ID, GetUnitX(this.getUnit()), GetUnitY(this.getUnit()), GetUnitFacing(this.getUnit()))
             call UnitAddAbility(caster, 'Aloc')
@@ -993,7 +1025,7 @@ struct ChangeEventUnitConstructionProgress extends ChangeEventUnit
         local integer totalConstructionTime = UnitTypes.getConstructionTime(GetUnitTypeId(this.getUnit()))
         local integer currentConstructionTime = R2I(GetUnitConstructionProgress(this.getUnit()))
         set this.progress = IMaxBJ(1, currentConstructionTime * 100 / totalConstructionTime)
-        call PrintMsg("|cff00ff00Hurray: Storing construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
+        //call PrintMsg("|cff00ff00Hurray: Storing construction progress of " + GetUnitName(this.getUnit()) + " with " + I2S(this.progress) + " %|r")
     endmethod
 
     public stub method restore takes nothing returns nothing
@@ -1033,6 +1065,21 @@ struct ChangeEventUnitMana extends ChangeEventUnit
     public static method create takes unit whichUnit, real previousMana returns thistype
         local thistype this = thistype.allocate(whichUnit)
         set this.previousMana = previousMana
+        return this
+    endmethod
+
+endstruct
+
+struct ChangeEventUnitResourceAmount extends ChangeEventUnit
+    private integer resourceAmount
+
+    public stub method restore takes nothing returns nothing
+        call SetResourceAmount(this.getUnit(), resourceAmount)
+    endmethod
+
+    public static method create takes unit whichUnit, integer resourceAmount returns thistype
+        local thistype this = thistype.allocate(whichUnit)
+        set this.resourceAmount = resourceAmount
         return this
     endmethod
 
@@ -1226,10 +1273,11 @@ struct ChangeEventPlayerChats extends ChangeEventImpl
     public stub method restore takes nothing returns nothing
         local ReverseStringFunctionInterface r = GetCustomReverseString()
         local integer i = 0
+        call PrintMsg("Restore chat event with text " + message)
         loop
             exitwhen (i == bj_MAX_PLAYERS)
             if (r.evaluate(message, Player(i)) != message) then
-                call DisplayTextToPlayer(Player(i), 0.0, 0.0, r.evaluate(message, Player(i)) + "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + r.evaluate(GetPlayerName(whichPlayer) + ": ", Player(i)) + "|r ")
+                call DisplayTextToPlayer(Player(i), 0.0, 0.0, r.evaluate("|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ":" + message, Player(i)))
             else
                 call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ": " + message)
             endif
@@ -1862,6 +1910,8 @@ struct TimeObjectUnit extends TimeObjectImpl
 
         // guard makes sure that the construction progress is not continued
         call this.cancelConstruction()
+
+        // TODO If the unit is currently restored flush all further change events which are not possible anymore like moving animations etc.
     endmethod
 
     private static method triggerFunctionDamage takes nothing returns nothing
@@ -1982,13 +2032,16 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitMana.create(GetStateChangingUnit(), GetPreviousStateValue()))
     endmethod
 
-    public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
-        set this.whichUnit = whichUnit
-        set this.isMoving = false
-        set this.isRepairing = false
-        set this.isBeingConstructed = false
+    public method replaceUnit takes unit whichUnit returns nothing
+        call FlushData(this.whichUnit)
 
+        set this.whichUnit = whichUnit
+        call this.destroyTriggers()
+        call this.createTriggers()
+        call SaveData(this.whichUnit, this)
+    endmethod
+
+    private method createTriggers takes nothing returns nothing
         set this.orderTrigger = CreateTrigger()
         call TriggerRegisterUnitEvent(this.orderTrigger, whichUnit, EVENT_UNIT_ISSUED_POINT_ORDER)
         call TriggerRegisterUnitEvent(this.orderTrigger, whichUnit, EVENT_UNIT_ISSUED_ORDER)
@@ -2076,16 +2129,23 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddCondition(this.manaTrigger, Condition(function thistype.triggerConditionChangeMana))
         call TriggerAddAction(this.manaTrigger, function thistype.triggerFunctionChangeMana)
         call SaveData(this.manaTrigger, this)
+    endmethod
+
+    public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(startTime, inverted)
+        set this.whichUnit = whichUnit
+        set this.isMoving = false
+        set this.isRepairing = false
+        set this.isBeingConstructed = false
+
+        call this.createTriggers()
 
         call SaveData(this.whichUnit, this)
 
         return this
     endmethod
 
-    public method onDestroy takes nothing returns nothing
-        call FlushData(this.whichUnit)
-        set this.whichUnit = null
-
+    private method destroyTriggers takes nothing returns nothing
         call FlushData(this.orderTrigger)
         call DestroyTrigger(this.orderTrigger)
         set this.orderTrigger = null
@@ -2151,8 +2211,44 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.manaTrigger = null
     endmethod
 
+    public method onDestroy takes nothing returns nothing
+        call FlushData(this.whichUnit)
+        set this.whichUnit = null
+
+        call this.destroyTriggers()
+    endmethod
+
     public static method fromUnit takes unit whichUnit returns thistype
         return LoadData(whichUnit)
+    endmethod
+
+endstruct
+
+struct TimeObjectGoldmine extends TimeObjectUnit
+    private integer resourceAmount
+
+    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
+        if (not timeIsInverted) then
+            call this.startRecordingChanges(time)
+        endif
+    endmethod
+
+    public stub method recordChanges takes integer time returns nothing
+        if (GetResourceAmount(this.getUnit()) != this.resourceAmount) then
+            call this.addChangeEvent(time, ChangeEventUnitResourceAmount.create(this.getUnit(), this.resourceAmount))
+            set this.resourceAmount = GetResourceAmount(this.getUnit())
+        endif
+    endmethod
+
+    public stub method onTimeInvertsSame takes integer time returns nothing
+        call this.startRecordingChanges(time)
+    endmethod
+
+    public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichUnit, startTime, inverted)
+        set this.resourceAmount = GetResourceAmount(whichUnit)
+
+        return this
     endmethod
 
 endstruct
@@ -2505,6 +2601,13 @@ struct TimeImpl extends Time
         return result
     endmethod
 
+    public stub method addGoldmine takes boolean inverted, unit whichUnit returns TimeObject
+        local TimeObjectGoldmine result = TimeObjectGoldmine.create(whichUnit, this.getTime(), inverted)
+        call this.addObject(result)
+
+        return result
+    endmethod
+
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
         local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
         call this.addObject(result)
@@ -2830,9 +2933,13 @@ globals
     Time globalTime = 0
 endglobals
 
+private function DefaultCustomReverseString takes string whichString, player whichPlayer returns string
+    return ReverseStringExceptColorCodes(whichString)
+endfunction
+
 private function Init takes nothing returns nothing
     set globalTime = TimeImpl.create()
-    call RegisterCustomReverseString(ReverseString)
+    call RegisterCustomReverseString(DefaultCustomReverseString)
 endfunction
 
 endlibrary
