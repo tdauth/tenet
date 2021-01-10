@@ -14,8 +14,15 @@ A [Tenet](https://www.imdb.com/title/tt6723592)-style prototype map.
 * If the global time is inverted then all not inverted objects/units will get restored all change events of their time line at the corresponding time frames.
 * If a unit is not restored it can be controlled again and its stored time line will be flushed, so we do not have to keep all changes which will be overriden.
 * If a copy is created of a unit by going forward or backwards it will disappear if time goes back/forward to its creation.
-* We can actually go backwards in time to a negative global clock value (so before the map has even started). Everything will stand around then?
+* We can actually go backwards in time to a negative global clock value (so before the map has even started). Everything will disappear which has been created at the time 0.
 * This kind of system allows us to minimize the stored changes and time lines.
+
+### TODO Interactions with inverted objects
+
+Interacting with inverted items would be fun, too.
+For example a unit can be restored and drop an inverted item at some point.
+If you pick up the inverted item with a non-inverted hero, it should have the inverted effect!
+If a restored inverted unit shoots at a non-inverted unit (if still possible), the non-inverted unit should be healed by this.
 
 ## Code
 
@@ -25,20 +32,22 @@ vJass implementation: [Tenet.j](./Tenet.j)
 
 Download: [Tenet.w3x](./Tenet.w3x)
 
-The Algorithm has to be switched by the Protagonist and the real one has to be brought to a certain point on the map.
-The Algorithm is protected by Hydralisks (bad guys).
+The Algorithm has to be switched with a fake Algorithm by the Protagonist in time.
+The real one has to be brought to a certain point on the map.
+The Algorithm is protected by Sator's mercenaries.
 
-Both forces (good and bad guys) are separated into two teams:
+Both forces (Tenet and Sator's mercenaries) are separated into two teams:
 
 * Red team: Moves forward through time.
 * Blue team: Moves backwards through time.
 
-There is one blue and red room on the map.
+In the beginning the time goes forward, so the units of the blue teams are restored automatically and cannot be controlled.
+
+There is one single turnstile machine on the map.
 Hence, the time can be inverted at any point in time.
-When the time is inverted, the blue team can gains control again to do something.
-The players have to lure the Hydralisks away from the Algorithm to switch it.
-Hence, the players can go back in time to certain point in time when the Algorithm is not protected and pick it up and drop it somewhere.
-Then the players can go forward and pick it up before it is picked up by the inverted Protagonist.
+When the time is inverted, the blue teams gain control again to do something and the red teams will be restored backwards in time.
+The turnstile machine allows you to copy the Algorithm and fake Algorithm.
+All real Algorithms should be at the specific locations on the map and at leaast one fake Algorithm must be placed at the original location.
 
 ## Videos
 

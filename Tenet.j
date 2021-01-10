@@ -1265,6 +1265,27 @@ struct ChangeEventTimerProgress extends ChangeEventImpl
     endmethod
 endstruct
 
+struct ChangeEventPlayerState extends ChangeEventImpl
+    private player whichPlayer
+    private playerstate whichState
+    private integer previousValue
+    private integer currentValue
+
+    public stub method restore takes nothing returns nothing
+        //call PrintMsg("Restoring state event for player " + GetPlayerName(this.whichPlayer) + " with value gold " + I2S(previousValue))
+        call AdjustPlayerStateBJ(-1 * (currentValue - previousValue), whichPlayer, whichState)
+    endmethod
+
+    public static method create takes player whichPlayer, playerstate whichState, integer previousValue, integer currentValue returns thistype
+        local thistype this = thistype.allocate()
+        set this.whichPlayer = whichPlayer
+        set this.whichState = whichState
+        set this.previousValue = previousValue
+        set this.currentValue = currentValue
+        return this
+    endmethod
+endstruct
+
 struct ChangeEventPlayerChats extends ChangeEventImpl
     private player whichPlayer
     private string message
@@ -1765,9 +1786,14 @@ struct TimeObjectUnit extends TimeObjectImpl
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
     endmethod
 
+    public stub method onTimeInvertsSame takes integer time returns nothing
+        call EnableTrigger(this.manaTrigger)
+    endmethod
+
     public stub method onTimeInvertsDifferent takes integer time returns nothing
         call IssueImmediateOrderBJ(this.whichUnit, "stop")
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
+        call DisableTrigger(this.manaTrigger)
         // TODO Disable mana and life regeneration of the unit
     endmethod
 
@@ -1911,7 +1937,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         // guard makes sure that the construction progress is not continued
         call this.cancelConstruction()
 
-        // TODO If the unit is currently restored flush all further change events which are not possible anymore like moving animations etc.
+        // TODO If the unit is currently restored flush all further change events which are not possible anymore like moving, animations etc.
     endmethod
 
     private static method triggerFunctionDamage takes nothing returns nothing
@@ -1938,8 +1964,12 @@ struct TimeObjectUnit extends TimeObjectImpl
         local ChangeEventUnitFacing changeEventFacing = ChangeEventUnitFacing.create(GetTriggerUnit())
         local location unitLocation = GetUnitLoc(GetTriggerUnit())
         local location targetLocation = GetUnitLoc(GetEventTargetUnit())
-        call this.addChangeEvent(globalTime.getTime(), changeEventFacing)
-        call changeEventFacing.setFacing(AngleBetweenPoints(unitLocation, targetLocation))
+        if (this.isInverted() == globalTime.isInverted()) then
+            call this.addChangeEvent(globalTime.getTime(), changeEventFacing)
+            call changeEventFacing.setFacing(AngleBetweenPoints(unitLocation, targetLocation))
+        else
+            call IssueImmediateOrderBJ(GetTriggerUnit(), "stop")
+        endif
         call RemoveLocation(unitLocation)
         set unitLocation = null
         call RemoveLocation(targetLocation)
@@ -2029,7 +2059,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionChangeMana takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         //call PrintMsg("|cff00ff00Hurray: Adding mana event with " + GetUnitName(GetStateChangingUnit()) + " with handle ID " + I2S(GetHandleId(GetStateChangingUnit())) + "|r")
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitMana.create(GetStateChangingUnit(), GetPreviousStateValue()))
+        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitMana.create(GetStateChangingUnit(), GetPreviousUnitStateValue()))
     endmethod
 
     public method replaceUnit takes unit whichUnit returns nothing
@@ -2389,10 +2419,29 @@ endstruct
 
 struct TimeObjectPlayer extends TimeObjectImpl
     private player whichPlayer
+    private trigger goldTrigger
     private trigger chatTrigger
+
+    public stub method onTimeInvertsSame takes integer time returns nothing
+        call EnableTrigger(this.goldTrigger)
+    endmethod
+
+    public stub method onTimeInvertsDifferent takes integer time returns nothing
+        call DisableTrigger(this.goldTrigger)
+    endmethod
+
+    public method addChangeEventPlayerState takes integer time, playerstate whichPlayerState, integer previousValue, integer currentValue returns nothing
+        call this.addChangeEvent(time, ChangeEventPlayerState.create(this.whichPlayer, whichPlayerState, previousValue, currentValue))
+    endmethod
 
     public method addChangeEventChatMessage takes integer time, string message returns nothing
         call this.addChangeEvent(time, ChangeEventPlayerChats.create(this.whichPlayer, message))
+    endmethod
+
+    private static method triggerFunctionGoldChanges takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        //call PrintMsg("Adding change event for state for player " + GetPlayerName(this.whichPlayer) + " with previous state value " + I2S(GetPreviousPlayerStateValue()))
+        call this.addChangeEventPlayerState(globalTime.getTime(), GetChangingPlayerState(), GetPreviousPlayerStateValue(), GetPlayerState(this.whichPlayer, GetChangingPlayerState()))
     endmethod
 
     private static method triggerFunctionChatEvent takes nothing returns nothing
@@ -2403,6 +2452,11 @@ struct TimeObjectPlayer extends TimeObjectImpl
     public static method create takes player whichPlayer, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(startTime, inverted)
         set this.whichPlayer = whichPlayer
+
+        set this.goldTrigger = CreateTrigger()
+        call TriggerRegisterPlayerStateChangesEvent(this.goldTrigger, whichPlayer, PLAYER_STATE_RESOURCE_GOLD)
+        call TriggerAddAction(this.goldTrigger, function thistype.triggerFunctionGoldChanges)
+        call SaveData(this.goldTrigger, this)
 
         set this.chatTrigger = CreateTrigger()
         call TriggerRegisterPlayerChatEvent(this.chatTrigger, whichPlayer, "", false)
@@ -2415,6 +2469,10 @@ struct TimeObjectPlayer extends TimeObjectImpl
     endmethod
 
     public method onDestroy takes nothing returns nothing
+        call FlushData(this.goldTrigger)
+        call DestroyTrigger(this.goldTrigger)
+        set this.goldTrigger = null
+
         call FlushData(this.chatTrigger)
         call DestroyTrigger(this.chatTrigger)
         set this.chatTrigger = null
@@ -4402,6 +4460,15 @@ globals
     hashtable unitStateDetectionHashTable = InitHashtable()
     trigger array unitStateDetectionTriggers
     integer unitStateDetectionTriggersSize = 0
+
+    private constant integer PLAYER_STATE_THRESHOLD = 1
+    private constant integer KEY_PLAYER = 0
+    private constant integer KEY_PLAYER_STATE = 1
+    private constant integer KEY_PLAYER_STATE_VALUE = 2
+
+    hashtable playerStateDetectionHashTable = InitHashtable()
+    trigger array playerStateDetectionTriggers
+    integer playerStateDetectionTriggersSize = 0
 endglobals
 
 private function PrintMsg takes string msg returns nothing
@@ -4479,12 +4546,119 @@ function GetStateChangingUnit takes nothing returns unit
     return LoadUnitHandle(unitStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_UNIT)
 endfunction
 
-function GetPreviousStateValue takes nothing returns real
+function GetPreviousUnitStateValue takes nothing returns real
     return LoadReal(unitStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_UNIT_STATE_VALUE)
 endfunction
 
-function GetCurrentStateValue takes nothing returns real
+function GetCurrentUnitStateValue takes nothing returns real
     return GetUnitState(GetStateChangingUnit(), GetChangingUnitState())
+endfunction
+
+private function PlayerState2I takes playerstate state returns integer
+    if (state == PLAYER_STATE_GAME_RESULT) then
+        return 0
+    elseif (state == PLAYER_STATE_RESOURCE_GOLD) then
+        return 1
+    elseif (state == PLAYER_STATE_RESOURCE_LUMBER) then
+        return 2
+    elseif (state == PLAYER_STATE_RESOURCE_HERO_TOKENS) then
+        return 3
+    elseif (state == PLAYER_STATE_RESOURCE_FOOD_CAP) then
+        return 4
+    elseif (state == PLAYER_STATE_RESOURCE_FOOD_USED) then
+        return 5
+    elseif (state == PLAYER_STATE_FOOD_CAP_CEILING) then
+        return 6
+    elseif (state == PLAYER_STATE_GIVES_BOUNTY) then
+        return 7
+    elseif (state == PLAYER_STATE_ALLIED_VICTORY) then
+        return 8
+    elseif (state == PLAYER_STATE_PLACED) then
+        return 9
+    elseif (state == PLAYER_STATE_OBSERVER_ON_DEATH) then
+        return 10
+    elseif (state == PLAYER_STATE_OBSERVER) then
+        return 11
+    elseif (state == PLAYER_STATE_UNFOLLOWABLE) then
+        return 12
+    elseif (state == PLAYER_STATE_GOLD_UPKEEP_RATE) then
+        return 13
+    elseif (state == PLAYER_STATE_LUMBER_UPKEEP_RATE) then
+        return 14
+    elseif (state == PLAYER_STATE_GOLD_GATHERED) then
+        return 15
+    elseif (state == PLAYER_STATE_LUMBER_GATHERED) then
+        return 16
+    elseif (state == PLAYER_STATE_NO_CREEP_SLEEP) then
+        return 25
+    endif
+
+    return -1
+endfunction
+
+private keyword UpdatePlayerStateDetectionTrigger
+
+private function TriggerConditionPlayerStateDetection takes nothing returns boolean
+    local playerstate state = ConvertPlayerState(LoadInteger(playerStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_PLAYER_STATE))
+    local integer current = GetPlayerState(GetTriggerPlayer(), state)
+    local integer i = 0
+    //call PrintMsg("Change state " + I2S(PlayerState2I(state)) + " of player " + GetPlayerName(GetTriggerPlayer()) + " with " + I2S(playerStateDetectionTriggersSize) + " triggers.")
+    loop
+        exitwhen (i == playerStateDetectionTriggersSize)
+        if (ConvertPlayerState(LoadInteger(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER_STATE)) == state and LoadPlayerHandle(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER) == GetTriggerPlayer()) then
+            //call PrintMsg("One matching trigger with handle ID " + I2S(GetHandleId(unitStateDetectionTriggers[i])))
+            call TriggerExecute(playerStateDetectionTriggers[i])
+            call SaveInteger(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER_STATE_VALUE, current) // update value
+        endif
+        set i = i + 1
+    endloop
+    call UpdatePlayerStateDetectionTrigger.evaluate(GetTriggerPlayer(), state)
+    return false
+endfunction
+
+private function UpdatePlayerStateDetectionTrigger takes player whichPlayer, playerstate state returns nothing
+    local trigger whichTrigger = null
+    if (HaveSavedHandle(playerStateDetectionHashTable, GetHandleId(whichPlayer), PlayerState2I(state))) then
+        set whichTrigger = LoadTriggerHandle(playerStateDetectionHashTable, GetHandleId(whichPlayer), PlayerState2I(state))
+        call DisableTrigger(whichTrigger)
+        call DestroyTrigger(whichTrigger)
+        set whichTrigger = null
+    endif
+
+    set whichTrigger = CreateTrigger()
+    call TriggerRegisterPlayerStateEvent(whichTrigger, whichPlayer, state, LESS_THAN, GetPlayerState(whichPlayer, state) - PLAYER_STATE_THRESHOLD)
+    call TriggerRegisterPlayerStateEvent(whichTrigger, whichPlayer, state, GREATER_THAN, GetPlayerState(whichPlayer, state) + PLAYER_STATE_THRESHOLD)
+    call TriggerAddCondition(whichTrigger, Condition(function TriggerConditionPlayerStateDetection))
+
+    call SaveInteger(playerStateDetectionHashTable, GetHandleId(whichTrigger), KEY_PLAYER_STATE, PlayerState2I(state))
+    call SaveTriggerHandle(playerStateDetectionHashTable, GetHandleId(whichPlayer), PlayerState2I(state), whichTrigger)
+endfunction
+
+function TriggerRegisterPlayerStateChangesEvent takes trigger whichTrigger, player whichPlayer, playerstate state returns nothing
+    set playerStateDetectionTriggers[playerStateDetectionTriggersSize] = whichTrigger
+    set playerStateDetectionTriggersSize = playerStateDetectionTriggersSize + 1
+
+    call SavePlayerHandle(playerStateDetectionHashTable, GetHandleId(whichTrigger), KEY_PLAYER, whichPlayer)
+    call SaveInteger(playerStateDetectionHashTable, GetHandleId(whichTrigger), KEY_PLAYER_STATE, PlayerState2I(state))
+    call SaveInteger(playerStateDetectionHashTable, GetHandleId(whichTrigger), KEY_PLAYER_STATE_VALUE, GetPlayerState(whichPlayer, state)) // update value
+
+    call UpdatePlayerStateDetectionTrigger(whichPlayer, state)
+endfunction
+
+function GetChangingPlayerState takes nothing returns playerstate
+    return ConvertPlayerState(LoadInteger(playerStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_PLAYER_STATE))
+endfunction
+
+function GetStateChangingPlayer takes nothing returns player
+    return LoadPlayerHandle(playerStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_PLAYER)
+endfunction
+
+function GetPreviousPlayerStateValue takes nothing returns integer
+    return LoadInteger(playerStateDetectionHashTable, GetHandleId(GetTriggeringTrigger()), KEY_PLAYER_STATE_VALUE)
+endfunction
+
+function GetCurrentPlayerStateValue takes nothing returns integer
+    return GetPlayerState(GetStateChangingPlayer(), GetChangingPlayerState())
 endfunction
 
 endlibrary
