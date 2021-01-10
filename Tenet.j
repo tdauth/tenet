@@ -2035,7 +2035,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public method finishConstruction takes nothing returns nothing
-        call PrintMsg("Finish construction of " + GetUnitName(this.getUnit()))
+        //call PrintMsg("Finish construction of " + GetUnitName(this.getUnit()))
         call this.stopRecordingChanges(globalTime.getTime())
         set this.isBeingConstructed = false
     endmethod
