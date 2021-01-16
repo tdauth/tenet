@@ -4712,13 +4712,14 @@ endfunction
 private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, integer originalLevel, integer toBeSkilledAbilityId, integer toBeSkilledLevel, real cooldownPercentage returns nothing
     local integer i
     if (abilityId != 0) then
-        call PrintMsg("Skilling hero skill " + GetObjectName(abilityId) + " to level " + I2S(toBeSkilledLevel))
+        //call PrintMsg("Skilling hero skill " + GetObjectName(abilityId) + " to level " + I2S(toBeSkilledLevel) + " with cooldown percentage " + R2S(cooldownPercentage))
         set i = 0
         loop
             exitwhen ((i == originalLevel) or (abilityId == toBeSkilledAbilityId and i == toBeSkilledLevel))
             call SelectHeroSkill(hero, abilityId)
             set i = i + 1
         endloop
+        //call PrintMsg("Setting cooldown to " + R2S(BlzGetUnitAbilityCooldown(hero, abilityId, i - 1) * cooldownPercentage))
         call BlzStartUnitAbilityCooldown(hero, abilityId, BlzGetUnitAbilityCooldown(hero, abilityId, i - 1) * cooldownPercentage)
     endif
 endfunction
@@ -4742,8 +4743,6 @@ private function TimerFunctionReskill takes nothing returns nothing
     local real abilityCooldownPercentage4 = LoadReal(timerHashTable, GetHandleId(GetExpiredTimer()), 15)
     local integer abilityId = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 16)
     local integer level = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 17)
-
-    call PrintMsg("After sleep")
 
     // TODO the to be skilled ability has the highest priority in skilling?
     if (abilityId0 == abilityId) then
@@ -4798,11 +4797,31 @@ private function SetHeroAbilityLevelEx takes unit hero, integer abilityId, integ
     local integer abilityLevel2 = GetHeroSkillLevel(hero, abilityId2)
     local integer abilityLevel3 = GetHeroSkillLevel(hero, abilityId3)
     local integer abilityLevel4 = GetHeroSkillLevel(hero, abilityId4)
-    local real abilityCooldownPercentage0 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId0) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId0, abilityLevel0), 1.0)
-    local real abilityCooldownPercentage1 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId1) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId1, abilityLevel1), 1.0)
-    local real abilityCooldownPercentage2 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId2) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId2, abilityLevel2), 1.0)
-    local real abilityCooldownPercentage3 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId3) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId3, abilityLevel3), 1.0)
-    local real abilityCooldownPercentage4 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId4) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId4, abilityLevel4), 1.0)
+    local real abilityCooldownPercentage0 = 0.0
+    local real abilityCooldownPercentage1 = 0.0
+    local real abilityCooldownPercentage2 = 0.0
+    local real abilityCooldownPercentage3 = 0.0
+    local real abilityCooldownPercentage4 = 0.0
+
+    if (abilityId0 != 0 and BlzGetUnitAbilityCooldown(hero, abilityId0, abilityLevel0) > 0.0) then
+        set abilityCooldownPercentage0 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId0) / BlzGetUnitAbilityCooldown(hero, abilityId0, abilityLevel0)
+    endif
+
+    if (abilityId1 != 0 and BlzGetUnitAbilityCooldown(hero, abilityId1, abilityLevel1) > 0.0) then
+        set abilityCooldownPercentage1 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId1) / BlzGetUnitAbilityCooldown(hero, abilityId1, abilityLevel1)
+    endif
+
+    if (abilityId2 != 0 and BlzGetUnitAbilityCooldown(hero, abilityId2, abilityLevel2) > 0.0) then
+        set abilityCooldownPercentage2 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId2) / BlzGetUnitAbilityCooldown(hero, abilityId2, abilityLevel2)
+    endif
+
+    if (abilityId3 != 0 and BlzGetUnitAbilityCooldown(hero, abilityId3, abilityLevel3) > 0.0) then
+        set abilityCooldownPercentage3 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId3) / BlzGetUnitAbilityCooldown(hero, abilityId3, abilityLevel3)
+    endif
+
+    if (abilityId4 != 0 and BlzGetUnitAbilityCooldown(hero, abilityId4, abilityLevel4) > 0.0) then
+        set abilityCooldownPercentage4 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId4) / BlzGetUnitAbilityCooldown(hero, abilityId4, abilityLevel4)
+    endif
 
     call BlzEndUnitAbilityCooldown(hero, abilityId0)
     call BlzEndUnitAbilityCooldown(hero, abilityId1)
@@ -4810,7 +4829,7 @@ private function SetHeroAbilityLevelEx takes unit hero, integer abilityId, integ
     call BlzEndUnitAbilityCooldown(hero, abilityId3)
     call BlzEndUnitAbilityCooldown(hero, abilityId4)
 
-    call PrintMsg("Adding ability " + GetObjectName(ABILITY_ID_UNLEARN) + " to unit " + GetUnitName(hero))
+    //call PrintMsg("Adding ability " + GetObjectName(ABILITY_ID_UNLEARN) + " to unit " + GetUnitName(hero))
 
     call UnitAddAbility(hero, ABILITY_ID_UNLEARN)
     call IssueImmediateOrderById(hero, ABILITY_ORDER_ID_UNLEARN)
