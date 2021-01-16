@@ -110,8 +110,8 @@ library MapEvents initializer Init requires Tenet
     endfunction
 
     private function Init takes nothing returns nothing
-        set turnstileMachine = TimeObjectTurnstileMachine.create(0, false)
-        set train = TimeObjectTrain.create(0, false)
+        set turnstileMachine = TimeObjectTurnstileMachine.create(globalTime, 0, false)
+        set train = TimeObjectTrain.create(globalTime, 0, false)
         call globalTime.addObject(turnstileMachine)
         call globalTime.addObject(train)
         call RegisterCustomReverseString(CustomReverseString)
@@ -334,7 +334,7 @@ endfunction
 
 endlibrary
 
-library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit, UnitProgress, StateDetection
+library Tenet initializer Init requires MapData, TenetUtility, LinkedList, ReverseAnimation, CopyUnit, UnitProgress, StateDetection, HeroAbilityLevel
 
 globals
     private ReverseStringFunctionInterface reverseStringFunction = 0
@@ -425,6 +425,11 @@ endinterface
 
 interface TimeObject
     public method getName takes nothing returns string
+
+    /**
+     * The corresponding time object
+     */
+    public method getTime takes nothing returns Time
 
     public method getStartTime takes nothing returns integer
     public method isInverted takes nothing returns boolean
@@ -1481,6 +1486,7 @@ struct TimeLineImpl extends TimeLine
 endstruct
 
 struct TimeObjectImpl extends TimeObject
+    private Time whichTime
     private integer startTime
     private boolean inverted
     private TimeLine timeLine
@@ -1501,6 +1507,10 @@ struct TimeObjectImpl extends TimeObject
         endif
 
         return " at start time " + I2S(this.startTime) + " and inverted " + inverted + " currently recording changes " + currentlyRecordingChanges + " instance " + I2S(this)
+    endmethod
+
+    public stub method getTime takes nothing returns Time
+        return whichTime
     endmethod
 
     public stub method getStartTime takes nothing returns integer
@@ -1601,8 +1611,9 @@ struct TimeObjectImpl extends TimeObject
     public stub method onTimeInvertsDifferent takes integer time returns nothing
     endmethod
 
-    public static method create takes integer startTime, boolean inverted returns thistype
+    public static method create takes Time whichTime, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate()
+        set this.whichTime = whichTime
         set this.startTime = startTime
         set this.inverted = inverted
         set this.timeLine = TimeLineImpl.create(this)
@@ -1634,15 +1645,14 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
         call this.startRecordingChanges(time)
     endmethod
 
-    public static method create takes integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
+    public static method create takes Time whichTime, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, inverted)
         return this
     endmethod
 
 endstruct
 
 struct TimeObjectMusic extends TimeObjectImpl
-    private Time whichTime
     private string whichMusic
     private string whichMusicInverted
 
@@ -1658,7 +1668,7 @@ struct TimeObjectMusic extends TimeObjectImpl
 
     public stub method recordChanges takes integer time returns nothing
         call this.getTimeLine().flushAllFrom(time - 1)
-        call this.addChangeEvent(time, ChangeEventMusicTime.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
+        call this.addChangeEvent(time, ChangeEventMusicTime.create(this.getTime(), this.whichMusic, this.whichMusicInverted))
         //call PrintMsg("recordChanges for music")
     endmethod
 
@@ -1666,9 +1676,8 @@ struct TimeObjectMusic extends TimeObjectImpl
         call this.startRecordingChanges(time)
     endmethod
 
-    public static method create takes integer startTime, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
-        local thistype this = thistype.allocate(startTime, false)
-        set this.whichTime = whichTime
+    public static method create takes Time whichTime, integer startTime, string whichMusic, string whichMusicInverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, false)
         set this.whichMusic = whichMusic
         set this.whichMusicInverted = whichMusicInverted
         return this
@@ -1677,7 +1686,6 @@ struct TimeObjectMusic extends TimeObjectImpl
 endstruct
 
 struct TimeObjectMusicInverted extends TimeObjectImpl
-    private Time whichTime
     private string whichMusic
     private string whichMusicInverted
 
@@ -1695,7 +1703,7 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
 
     public stub method recordChanges takes integer time returns nothing
         call this.getTimeLine().flushAllFrom(time + 1)
-        call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.whichTime, this.whichMusic, this.whichMusicInverted))
+        call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.getTime(), this.whichMusic, this.whichMusicInverted))
         //call PrintMsg("recordChanges for music")
     endmethod
 
@@ -1703,9 +1711,8 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         call this.startRecordingChanges(time)
     endmethod
 
-    public static method create takes integer startTime, Time whichTime, string whichMusic, string whichMusicInverted returns thistype
-        local thistype this = thistype.allocate(startTime, true)
-        set this.whichTime = whichTime
+    public static method create takes Time whichTime, integer startTime, string whichMusic, string whichMusicInverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, true)
         set this.whichMusic = whichMusic
         set this.whichMusicInverted = whichMusicInverted
         return this
@@ -1902,26 +1909,26 @@ struct TimeObjectUnit extends TimeObjectImpl
         if (GetIssuedOrderId() == String2OrderIdBJ("move") or GetIssuedOrderId() == String2OrderIdBJ("smart")) then
             //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
             set this.isMoving = true
-            call this.startRecordingChanges(globalTime.getTime())
+            call this.startRecordingChanges(this.getTime().getTime())
         elseif (GetIssuedOrderId() == String2OrderIdBJ("stop") or GetIssuedOrderId() == String2OrderIdBJ("halt") or GetIssuedOrderId() == String2OrderIdBJ("holdposition")) then
             //call PrintMsg("Stop order for unit: " + GetUnitName(this.whichUnit))
-            call this.stopRecordingChanges(globalTime.getTime())
+            call this.stopRecordingChanges(this.getTime().getTime())
             set this.isMoving = false
             set this.isRepairing = false
         elseif (GetIssuedOrderId() == String2OrderIdBJ("repair")) then
             set this.isRepairing = true
-            call this.startRecordingChanges(globalTime.getTime())
+            call this.startRecordingChanges(this.getTime().getTime())
         endif
     endmethod
 
     private static method triggerFunctionPickupItem takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitPickupItem.create(GetTriggerUnit(), GetManipulatedItem()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitPickupItem.create(GetTriggerUnit(), GetManipulatedItem()))
     endmethod
 
     private static method triggerFunctionDropItem takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitDropItem.create(GetTriggerUnit(), GetManipulatedItem()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitDropItem.create(GetTriggerUnit(), GetManipulatedItem()))
     endmethod
 
     private static method triggerFunctionPawnItem takes nothing returns nothing
@@ -1939,7 +1946,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         local ChangeEvent changeEventUnitAlive = ChangeEventUnitAlive.create(whichUnit)
         local ChangeEvent changeEventUnitDead = ChangeEventUnitDead.create(whichUnit)
         local ChangeEvent changeEventUnitAnimation = ChangeEventUnitAnimation.create(this, UnitTypes.getDeathAnimationIndex(GetUnitTypeId(GetTriggerUnit())), UnitTypes.getDeathAnimationDuration(GetUnitTypeId(GetTriggerUnit())))
-        call this.addThreeChangeEventsNextToEachOther(globalTime.getTime(), changeEventUnitAlive, changeEventUnitDead, changeEventUnitAnimation)
+        call this.addThreeChangeEventsNextToEachOther(this.getTime().getTime(), changeEventUnitAlive, changeEventUnitDead, changeEventUnitAnimation)
 
         // guard makes sure that the construction progress is not continued
         call this.cancelConstruction()
@@ -1949,7 +1956,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionDamage takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitTakesDamage.create(BlzGetEventDamageTarget(), GetEventDamageSource(), GetEventDamage(), BlzGetEventAttackType(), BlzGetEventDamageType(), GetUnitStateSwap(UNIT_STATE_LIFE, BlzGetEventDamageTarget())))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitTakesDamage.create(BlzGetEventDamageTarget(), GetEventDamageSource(), GetEventDamage(), BlzGetEventAttackType(), BlzGetEventDamageType(), GetUnitStateSwap(UNIT_STATE_LIFE, BlzGetEventDamageTarget())))
     endmethod
 
     private static method triggerFunctionAttacked takes nothing returns nothing
@@ -1957,13 +1964,13 @@ struct TimeObjectUnit extends TimeObjectImpl
         local thistype other = thistype.fromUnit(GetAttacker())
 
         if (other != 0) then
-            call other.addChangeEvent(globalTime.getTime(), ChangeEventUnitAnimation.create(other, UnitTypes.getAttackAnimationIndex(GetUnitTypeId(GetAttacker())), UnitTypes.getAttackAnimationDuration(GetUnitTypeId(GetAttacker()))))
+            call other.addChangeEvent(this.getTime().getTime(), ChangeEventUnitAnimation.create(other, UnitTypes.getAttackAnimationIndex(GetUnitTypeId(GetAttacker())), UnitTypes.getAttackAnimationDuration(GetUnitTypeId(GetAttacker()))))
         endif
     endmethod
 
     private static method triggerFunctionLevel takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitLevel.create(GetTriggerUnit()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitLevel.create(GetTriggerUnit()))
     endmethod
 
     private static method triggerFunctionAcquireTarget takes nothing returns nothing
@@ -1971,8 +1978,8 @@ struct TimeObjectUnit extends TimeObjectImpl
         local ChangeEventUnitFacing changeEventFacing = ChangeEventUnitFacing.create(GetTriggerUnit())
         local location unitLocation = GetUnitLoc(GetTriggerUnit())
         local location targetLocation = GetUnitLoc(GetEventTargetUnit())
-        if (this.isInverted() == globalTime.isInverted()) then
-            call this.addChangeEvent(globalTime.getTime(), changeEventFacing)
+        if (this.isInverted() == this.getTime().isInverted()) then
+            call this.addChangeEvent(this.getTime().getTime(), changeEventFacing)
             call changeEventFacing.setFacing(AngleBetweenPoints(unitLocation, targetLocation))
         else
             call IssueImmediateOrderBJ(GetTriggerUnit(), "stop")
@@ -1992,7 +1999,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionLoad takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         //call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
     endmethod
 
     private static method triggerConditionUnload takes nothing returns boolean
@@ -2004,7 +2011,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionUnload takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         //call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
     private static method triggerConditionBeginConstruction takes nothing returns boolean
@@ -2014,16 +2021,16 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public method startConstruction takes nothing returns nothing
         set this.isBeingConstructed = true
-        set this.constructionStartTime = globalTime.getTime()
+        set this.constructionStartTime = this.getTime().getTime()
         call this.startRecordingChanges(this.constructionStartTime)
         //call PrintMsg("Beginning construction of " + GetUnitName(this.getUnit()))
     endmethod
 
     public method cancelConstruction takes nothing returns nothing
         //call PrintMsg("Cancel construction of " + GetUnitName(this.getUnit()))
-        call this.stopRecordingChanges(globalTime.getTime())
+        call this.stopRecordingChanges(this.getTime().getTime())
         set this.isBeingConstructed = false
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitCancelConstruction.create(this.getUnit()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitCancelConstruction.create(this.getUnit()))
     endmethod
 
     private static method triggerFunctionStartConstruction takes nothing returns nothing
@@ -2043,7 +2050,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public method finishConstruction takes nothing returns nothing
         //call PrintMsg("Finish construction of " + GetUnitName(this.getUnit()))
-        call this.stopRecordingChanges(globalTime.getTime())
+        call this.stopRecordingChanges(this.getTime().getTime())
         set this.isBeingConstructed = false
     endmethod
 
@@ -2060,13 +2067,13 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerConditionChangeMana takes nothing returns boolean
         local thistype this = LoadData(GetTriggeringTrigger())
 
-        return this.isInverted() == globalTime.isInverted()
+        return this.isInverted() == this.getTime().isInverted()
     endmethod
 
     private static method triggerFunctionChangeMana takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         //call PrintMsg("|cff00ff00Hurray: Adding mana event with " + GetUnitName(GetStateChangingUnit()) + " with handle ID " + I2S(GetHandleId(GetStateChangingUnit())) + "|r")
-        call this.addChangeEvent(globalTime.getTime(), ChangeEventUnitMana.create(GetStateChangingUnit(), GetPreviousUnitStateValue()))
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitMana.create(GetStateChangingUnit(), GetPreviousUnitStateValue()))
     endmethod
 
     public method replaceUnit takes unit whichUnit returns nothing
@@ -2168,8 +2175,8 @@ struct TimeObjectUnit extends TimeObjectImpl
         call SaveData(this.manaTrigger, this)
     endmethod
 
-    public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
+    public static method create takes Time whichTime, unit whichUnit, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichUnit = whichUnit
         set this.isMoving = false
         set this.isRepairing = false
@@ -2281,8 +2288,8 @@ struct TimeObjectGoldmine extends TimeObjectUnit
         call this.startRecordingChanges(time)
     endmethod
 
-    public static method create takes unit whichUnit, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(whichUnit, startTime, inverted)
+    public static method create takes Time whichTime, unit whichUnit, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, whichUnit, startTime, inverted)
         set this.resourceAmount = GetResourceAmount(whichUnit)
 
         return this
@@ -2303,8 +2310,8 @@ struct TimeObjectItem extends TimeObjectImpl
         call ChangeEventItemExists.apply(this.whichItem)
     endmethod
 
-    public static method create takes item whichItem, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
+    public static method create takes Time whichTime, item whichItem, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichItem = whichItem
 
         call SaveData(this.whichItem, this)
@@ -2345,11 +2352,11 @@ struct TimeObjectDestructable extends TimeObjectImpl
         local ChangeEvent changeEventDestructableAlive = ChangeEventDestructableAlive.create(GetDyingDestructable())
         local ChangeEvent changeEventDestructableDead = ChangeEventDestructableDead.create(GetDyingDestructable())
         local ChangeEvent changeEventDestructabletAnimation = ChangeEventDestructableAnimation.create(this, Destructables.getDeathAnimationIndex(GetDestructableTypeId(GetDyingDestructable())), Destructables.getDeathAnimationDuration(GetDestructableTypeId(GetDyingDestructable())))
-        call this.addThreeChangeEventsNextToEachOther(globalTime.getTime(), changeEventDestructableAlive, changeEventDestructableDead, changeEventDestructabletAnimation)
+        call this.addThreeChangeEventsNextToEachOther(this.getTime().getTime(), changeEventDestructableAlive, changeEventDestructableDead, changeEventDestructabletAnimation)
     endmethod
 
-    public static method create takes destructable whichDestructable, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
+    public static method create takes Time whichTime, destructable whichDestructable, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichDestructable = whichDestructable
 
         set this.deathTrigger = CreateTrigger()
@@ -2404,8 +2411,8 @@ struct TimeObjectTimer extends TimeObjectImpl
         call this.addChangeEvent(time, ChangeEventTimerProgress.create(this, TimerGetRemaining(whichTimer)))
     endmethod
 
-    public static method create takes timer whichTimer, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
+    public static method create takes Time whichTime, timer whichTimer, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichTimer = whichTimer
         set this.timeout = TimerGetTimeout(whichTimer)
 
@@ -2448,16 +2455,16 @@ struct TimeObjectPlayer extends TimeObjectImpl
     private static method triggerFunctionGoldChanges takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         //call PrintMsg("Adding change event for state for player " + GetPlayerName(this.whichPlayer) + " with previous state value " + I2S(GetPreviousPlayerStateValue()))
-        call this.addChangeEventPlayerState(globalTime.getTime(), GetChangingPlayerState(), GetPreviousPlayerStateValue(), GetPlayerState(this.whichPlayer, GetChangingPlayerState()))
+        call this.addChangeEventPlayerState(this.getTime().getTime(), GetChangingPlayerState(), GetPreviousPlayerStateValue(), GetPlayerState(this.whichPlayer, GetChangingPlayerState()))
     endmethod
 
     private static method triggerFunctionChatEvent takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.addChangeEventChatMessage(globalTime.getTime(), GetEventPlayerChatString())
+        call this.addChangeEventChatMessage(this.getTime().getTime(), GetEventPlayerChatString())
     endmethod
 
-    public static method create takes player whichPlayer, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(startTime, inverted)
+    public static method create takes Time whichTime, player whichPlayer, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichPlayer = whichPlayer
 
         set this.goldTrigger = CreateTrigger()
@@ -2647,56 +2654,56 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addTimeOfDay takes nothing returns TimeObject
-        local TimeObjectTimeOfDay timeObjectTimeOfDay = TimeObjectTimeOfDay.create(this.getTime(), false)
+        local TimeObjectTimeOfDay timeObjectTimeOfDay = TimeObjectTimeOfDay.create(this, this.getTime(), false)
         call this.addObject(timeObjectTimeOfDay)
 
         return timeObjectTimeOfDay
     endmethod
 
     public stub method addMusic takes string whichMusic, string whichMusicInverted returns nothing
-        local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this.getTime(), this, whichMusic, whichMusicInverted)
-        local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this.getTime(), this, whichMusic, whichMusicInverted)
+        local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this, this.getTime(), whichMusic, whichMusicInverted)
+        local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this, this.getTime(), whichMusic, whichMusicInverted)
         call this.addObject(timeObjectMusic)
         call this.addObject(timeObjectMusicInverted)
     endmethod
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
-        local TimeObjectUnit result = TimeObjectUnit.create(whichUnit, this.getTime(), inverted)
+        local TimeObjectUnit result = TimeObjectUnit.create(this, whichUnit, this.getTime(), inverted)
         call this.addObject(result)
 
         return result
     endmethod
 
     public stub method addGoldmine takes boolean inverted, unit whichUnit returns TimeObject
-        local TimeObjectGoldmine result = TimeObjectGoldmine.create(whichUnit, this.getTime(), inverted)
+        local TimeObjectGoldmine result = TimeObjectGoldmine.create(this, whichUnit, this.getTime(), inverted)
         call this.addObject(result)
 
         return result
     endmethod
 
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
-        local TimeObjectItem result = TimeObjectItem.create(whichItem, this.getTime(), inverted)
+        local TimeObjectItem result = TimeObjectItem.create(this, whichItem, this.getTime(), inverted)
         call this.addObject(result)
 
         return result
     endmethod
 
     public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
-        local TimeObjectDestructable result = TimeObjectDestructable.create(whichDestructable, this.getTime(), inverted)
+        local TimeObjectDestructable result = TimeObjectDestructable.create(this, whichDestructable, this.getTime(), inverted)
         call this.addObject(result)
 
         return result
     endmethod
 
     public stub method addTimer takes boolean inverted, timer whichTimer returns TimeObject
-        local TimeObjectTimer result = TimeObjectTimer.create(whichTimer, this.getTime(), inverted)
+        local TimeObjectTimer result = TimeObjectTimer.create(this, whichTimer, this.getTime(), inverted)
         call this.addObject(result)
 
         return result
     endmethod
 
     public stub method addPlayer takes boolean inverted, player whichPlayer returns TimeObject
-        local TimeObjectPlayer result = TimeObjectPlayer.create(whichPlayer, this.getTime(), inverted)
+        local TimeObjectPlayer result = TimeObjectPlayer.create(this, whichPlayer, this.getTime(), inverted)
         call this.addObject(result)
 
         return result
@@ -4678,8 +4685,9 @@ library HeroAbilityLevel
 
 globals
     private integer ABILITY_ID_UNLEARN = 'A00U'
-    private string ABILITY_ORDER_UNLEARN = "absorb"
+    private integer ABILITY_ORDER_ID_UNLEARN = 852471
     private hashtable whichHashTable = InitHashtable()
+    private hashtable timerHashTable = InitHashtable()
 endglobals
 
 private function PrintMsg takes string msg returns nothing
@@ -4704,6 +4712,7 @@ endfunction
 private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, integer originalLevel, integer toBeSkilledAbilityId, integer toBeSkilledLevel, real cooldownPercentage returns nothing
     local integer i
     if (abilityId != 0) then
+        call PrintMsg("Skilling hero skill " + GetObjectName(abilityId) + " to level " + I2S(toBeSkilledLevel))
         set i = 0
         loop
             exitwhen ((i == originalLevel) or (abilityId == toBeSkilledAbilityId and i == toBeSkilledLevel))
@@ -4714,35 +4723,27 @@ private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, i
     endif
 endfunction
 
-function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level returns nothing
-    local integer abilityId0 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 0)
-    local integer abilityId1 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 1)
-    local integer abilityId2 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 2)
-    local integer abilityId3 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 3)
-    local integer abilityId4 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 4)
-    local integer abilityLevel0 = GetHeroSkillLevel(hero, abilityId0)
-    local integer abilityLevel1 = GetHeroSkillLevel(hero, abilityId1)
-    local integer abilityLevel2 = GetHeroSkillLevel(hero, abilityId2)
-    local integer abilityLevel3 = GetHeroSkillLevel(hero, abilityId3)
-    local integer abilityLevel4 = GetHeroSkillLevel(hero, abilityId4)
-    local real abilityCooldownPercentage0 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId0) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId0, abilityLevel0), 1.0)
-    local real abilityCooldownPercentage1 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId1) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId1, abilityLevel1), 1.0)
-    local real abilityCooldownPercentage2 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId2) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId2, abilityLevel2), 1.0)
-    local real abilityCooldownPercentage3 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId3) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId3, abilityLevel3), 1.0)
-    local real abilityCooldownPercentage4 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId4) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId4, abilityLevel4), 1.0)
+private function TimerFunctionReskill takes nothing returns nothing
+    local unit hero = LoadUnitHandle(timerHashTable, GetHandleId(GetExpiredTimer()), 0)
+    local integer abilityId0 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 1)
+    local integer abilityId1 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 2)
+    local integer abilityId2 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 3)
+    local integer abilityId3 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 4)
+    local integer abilityId4 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 5)
+    local integer abilityLevel0 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 6)
+    local integer abilityLevel1 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 7)
+    local integer abilityLevel2 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 8)
+    local integer abilityLevel3 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 9)
+    local integer abilityLevel4 = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 10)
+    local real abilityCooldownPercentage0 = LoadReal(timerHashTable, GetHandleId(GetExpiredTimer()), 11)
+    local real abilityCooldownPercentage1 = LoadReal(timerHashTable, GetHandleId(GetExpiredTimer()), 12)
+    local real abilityCooldownPercentage2 = LoadReal(timerHashTable, GetHandleId(GetExpiredTimer()), 13)
+    local real abilityCooldownPercentage3 = LoadReal(timerHashTable, GetHandleId(GetExpiredTimer()), 14)
+    local real abilityCooldownPercentage4 = LoadReal(timerHashTable, GetHandleId(GetExpiredTimer()), 15)
+    local integer abilityId = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 16)
+    local integer level = LoadInteger(timerHashTable, GetHandleId(GetExpiredTimer()), 17)
 
-    call BlzEndUnitAbilityCooldown(hero, abilityId0)
-    call BlzEndUnitAbilityCooldown(hero, abilityId1)
-    call BlzEndUnitAbilityCooldown(hero, abilityId2)
-    call BlzEndUnitAbilityCooldown(hero, abilityId3)
-    call BlzEndUnitAbilityCooldown(hero, abilityId4)
-
-    call PrintMsg("Adding ability " + GetObjectName(ABILITY_ID_UNLEARN) + " to unit " + GetUnitName(hero))
-
-
-    call UnitAddAbility(hero, ABILITY_ID_UNLEARN)
-    call IssueImmediateOrderBJ(hero, ABILITY_ORDER_UNLEARN)
-    //call UnitAddItemByIdSwapped('tret', hero)
+    call PrintMsg("After sleep")
 
     // TODO the to be skilled ability has the highest priority in skilling?
     if (abilityId0 == abilityId) then
@@ -4775,6 +4776,72 @@ function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level r
 
     if (abilityId4 != abilityId) then
         call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level, abilityCooldownPercentage4)
+    endif
+
+    call UnitRemoveAbility(hero, ABILITY_ID_UNLEARN)
+
+    call SaveBoolean(whichHashTable, GetHandleId(hero), 0, true)
+    call PauseTimer(GetExpiredTimer())
+    call FlushChildHashtable(timerHashTable, GetHandleId(GetExpiredTimer()))
+    call DestroyTimer(GetExpiredTimer())
+endfunction
+
+private function SetHeroAbilityLevelEx takes unit hero, integer abilityId, integer level returns nothing
+    local timer whichTimer = CreateTimer()
+    local integer abilityId0 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 0)
+    local integer abilityId1 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 1)
+    local integer abilityId2 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 2)
+    local integer abilityId3 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 3)
+    local integer abilityId4 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 4)
+    local integer abilityLevel0 = GetHeroSkillLevel(hero, abilityId0)
+    local integer abilityLevel1 = GetHeroSkillLevel(hero, abilityId1)
+    local integer abilityLevel2 = GetHeroSkillLevel(hero, abilityId2)
+    local integer abilityLevel3 = GetHeroSkillLevel(hero, abilityId3)
+    local integer abilityLevel4 = GetHeroSkillLevel(hero, abilityId4)
+    local real abilityCooldownPercentage0 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId0) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId0, abilityLevel0), 1.0)
+    local real abilityCooldownPercentage1 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId1) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId1, abilityLevel1), 1.0)
+    local real abilityCooldownPercentage2 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId2) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId2, abilityLevel2), 1.0)
+    local real abilityCooldownPercentage3 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId3) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId3, abilityLevel3), 1.0)
+    local real abilityCooldownPercentage4 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId4) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId4, abilityLevel4), 1.0)
+
+    call BlzEndUnitAbilityCooldown(hero, abilityId0)
+    call BlzEndUnitAbilityCooldown(hero, abilityId1)
+    call BlzEndUnitAbilityCooldown(hero, abilityId2)
+    call BlzEndUnitAbilityCooldown(hero, abilityId3)
+    call BlzEndUnitAbilityCooldown(hero, abilityId4)
+
+    call PrintMsg("Adding ability " + GetObjectName(ABILITY_ID_UNLEARN) + " to unit " + GetUnitName(hero))
+
+    call UnitAddAbility(hero, ABILITY_ID_UNLEARN)
+    call IssueImmediateOrderById(hero, ABILITY_ORDER_ID_UNLEARN)
+
+    call SaveUnitHandle(timerHashTable, GetHandleId(whichTimer), 0, hero)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 1, abilityId0)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 2, abilityId1)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 3, abilityId2)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 4, abilityId3)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 5, abilityId4)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 6, abilityLevel0)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 7, abilityLevel1)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 8, abilityLevel2)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 9, abilityLevel3)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 10, abilityLevel4)
+    call SaveReal(timerHashTable, GetHandleId(whichTimer), 11, abilityCooldownPercentage0)
+    call SaveReal(timerHashTable, GetHandleId(whichTimer), 12, abilityCooldownPercentage1)
+    call SaveReal(timerHashTable, GetHandleId(whichTimer), 13, abilityCooldownPercentage2)
+    call SaveReal(timerHashTable, GetHandleId(whichTimer), 14, abilityCooldownPercentage3)
+    call SaveReal(timerHashTable, GetHandleId(whichTimer), 15, abilityCooldownPercentage4)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 16, abilityId)
+    call SaveInteger(timerHashTable, GetHandleId(whichTimer), 17, level)
+
+    call TimerStart(whichTimer, 1.0, false, function TimerFunctionReskill)
+endfunction
+
+// TODO Not only guard calls but queue them?
+function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level returns nothing
+    if (not HaveSavedBoolean(whichHashTable, GetHandleId(hero), 0) or LoadBoolean(whichHashTable, GetHandleId(hero), 0)) then
+        call SaveBoolean(whichHashTable, GetHandleId(hero), 0, false)
+        call SetHeroAbilityLevelEx(hero, abilityId, level)
     endif
 endfunction
 
