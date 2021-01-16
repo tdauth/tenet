@@ -4700,7 +4700,7 @@ private function GetHeroSkillLevel takes unit hero, integer abilityId returns in
     return GetUnitAbilityLevelSwapped(abilityId, hero)
 endfunction
 
-private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, integer originalLevel, integer toBeSkilledAbilityId, integer toBeSkilledLevel returns nothing
+private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, integer originalLevel, integer toBeSkilledAbilityId, integer toBeSkilledLevel, real cooldownPercentage returns nothing
     local integer i
     if (abilityId != 0) then
         set i = 0
@@ -4709,6 +4709,7 @@ private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, i
             call SelectHeroSkill(hero, abilityId)
             set i = i + 1
         endloop
+        call BlzStartUnitAbilityCooldown(hero, abilityId, BlzGetUnitAbilityCooldown(hero, abilityId, i - 1) * cooldownPercentage)
     endif
 endfunction
 
@@ -4723,43 +4724,56 @@ function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level r
     local integer abilityLevel2 = GetHeroSkillLevel(hero, abilityId2)
     local integer abilityLevel3 = GetHeroSkillLevel(hero, abilityId3)
     local integer abilityLevel4 = GetHeroSkillLevel(hero, abilityId4)
-    local integer i = 0
+    local real abilityCooldownPercentage0 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId0) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId0, abilityLevel0), 1.0)
+    local real abilityCooldownPercentage1 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId1) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId1, abilityLevel1), 1.0)
+    local real abilityCooldownPercentage2 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId2) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId2, abilityLevel2), 1.0)
+    local real abilityCooldownPercentage3 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId3) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId3, abilityLevel3), 1.0)
+    local real abilityCooldownPercentage4 = BlzGetUnitAbilityCooldownRemaining(hero, abilityId4) / RMaxBJ(BlzGetUnitAbilityCooldown(hero, abilityId4, abilityLevel4), 1.0)
+
+    call BlzEndUnitAbilityCooldown(hero, abilityId0)
+    call BlzEndUnitAbilityCooldown(hero, abilityId1)
+    call BlzEndUnitAbilityCooldown(hero, abilityId2)
+    call BlzEndUnitAbilityCooldown(hero, abilityId3)
+    call BlzEndUnitAbilityCooldown(hero, abilityId4)
+
     call PrintMsg("Adding ability " + GetObjectName(ABILITY_ID_UNLEARN) + " to unit " + GetUnitName(hero))
+
+
     call UnitAddAbility(hero, ABILITY_ID_UNLEARN)
     call IssueImmediateOrderBJ(hero, ABILITY_ORDER_UNLEARN)
     //call UnitAddItemByIdSwapped('tret', hero)
 
     // TODO the to be skilled ability has the highest priority in skilling?
     if (abilityId0 == abilityId) then
-        call SelectHeroSkillUntilLevel(hero, abilityId0, abilityLevel0, abilityId, level)
+        call SelectHeroSkillUntilLevel(hero, abilityId0, abilityLevel0, abilityId, level, abilityCooldownPercentage0)
     elseif (abilityId1 == abilityId) then
-         call SelectHeroSkillUntilLevel(hero, abilityId1, abilityLevel1, abilityId, level)
+         call SelectHeroSkillUntilLevel(hero, abilityId1, abilityLevel1, abilityId, level, abilityCooldownPercentage1)
     elseif (abilityId2 == abilityId) then
-         call SelectHeroSkillUntilLevel(hero, abilityId2, abilityLevel2, abilityId, level)
+         call SelectHeroSkillUntilLevel(hero, abilityId2, abilityLevel2, abilityId, level, abilityCooldownPercentage2)
     elseif (abilityId3 == abilityId) then
-         call SelectHeroSkillUntilLevel(hero, abilityId3, abilityLevel3, abilityId, level)
+         call SelectHeroSkillUntilLevel(hero, abilityId3, abilityLevel3, abilityId, level, abilityCooldownPercentage3)
     elseif (abilityId4 == abilityId) then
-         call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level)
+         call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level, abilityCooldownPercentage4)
     endif
 
     if (abilityId0 != abilityId) then
-        call SelectHeroSkillUntilLevel(hero, abilityId0, abilityLevel0, abilityId, level)
+        call SelectHeroSkillUntilLevel(hero, abilityId0, abilityLevel0, abilityId, level, abilityCooldownPercentage0)
     endif
 
     if (abilityId1 != abilityId) then
-        call SelectHeroSkillUntilLevel(hero, abilityId1, abilityLevel1, abilityId, level)
+        call SelectHeroSkillUntilLevel(hero, abilityId1, abilityLevel1, abilityId, level, abilityCooldownPercentage1)
     endif
 
     if (abilityId2 != abilityId) then
-        call SelectHeroSkillUntilLevel(hero, abilityId2, abilityLevel2, abilityId, level)
+        call SelectHeroSkillUntilLevel(hero, abilityId2, abilityLevel2, abilityId, level, abilityCooldownPercentage2)
     endif
 
     if (abilityId3 != abilityId) then
-        call SelectHeroSkillUntilLevel(hero, abilityId3, abilityLevel3, abilityId, level)
+        call SelectHeroSkillUntilLevel(hero, abilityId3, abilityLevel3, abilityId, level, abilityCooldownPercentage3)
     endif
 
     if (abilityId4 != abilityId) then
-        call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level)
+        call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level, abilityCooldownPercentage4)
     endif
 endfunction
 
