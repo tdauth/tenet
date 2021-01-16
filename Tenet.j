@@ -328,7 +328,34 @@ function PlayerColorToString takes playercolor playerColor returns string
         return "106246"
     elseif (playerColor == PLAYER_COLOR_BROWN) then
         return "804000"
+    elseif (playerColor == PLAYER_COLOR_MAROON) then
+        return "9c0000"
+    elseif (playerColor == PLAYER_COLOR_NAVY) then
+        return "0000c3"
+    elseif (playerColor == PLAYER_COLOR_TURQUOISE) then
+        return "00ebff"
+    elseif (playerColor == PLAYER_COLOR_VIOLET) then
+        return "bd00ff"
+    elseif (playerColor == PLAYER_COLOR_WHEAT) then
+        return "ecce87"
+    elseif (playerColor == PLAYER_COLOR_PEACH) then
+        return "f7a58b"
+    elseif (playerColor == PLAYER_COLOR_MINT) then
+        return "bfff81"
+    elseif (playerColor == PLAYER_COLOR_LAVENDER) then
+        return "dbb8eb"
+    elseif (playerColor == PLAYER_COLOR_COAL) then
+        return "4f5055"
+    elseif (playerColor == PLAYER_COLOR_SNOW) then
+        return "ecf0ff"
+    elseif (playerColor == PLAYER_COLOR_EMERALD) then
+        return "00781e"
+    elseif (playerColor == PLAYER_COLOR_PEANUT) then
+        return "a56f34"
     endif
+
+    //Player Neutral: Black |cff2e2d2e
+
     return "ffffff"
 endfunction
 
