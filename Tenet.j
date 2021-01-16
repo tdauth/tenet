@@ -1301,7 +1301,7 @@ struct ChangeEventPlayerChats extends ChangeEventImpl
     public stub method restore takes nothing returns nothing
         local ReverseStringFunctionInterface r = GetCustomReverseString()
         local integer i = 0
-        call PrintMsg("Restore chat event with text " + message)
+        //call PrintMsg("Restore chat event with text " + message)
         loop
             exitwhen (i == bj_MAX_PLAYERS)
             if (r.evaluate(message, Player(i)) != message) then
@@ -2530,6 +2530,7 @@ struct TimeImpl extends Time
                 // This might lead to calling onExists multiple times but makes absolutely sure that the object does exist!
                 // Call onExists if it is multiple ticks and the start time was in that range or for one tick if its exactly the start time.
                 if ((moreThanOneTick and (timeObject.isInverted() and time <= timeObject.getStartTime()) or (not timeObject.isInverted() and time >= timeObject.getStartTime())) or (not moreThanOneTick and (timeObject.isInverted() and time == timeObject.getStartTime()) or (not timeObject.isInverted() and time == timeObject.getStartTime()))) then
+                    //call PrintMsg("Calling on exists at time " + I2S(time) + " for object " + timeObject.getName())
                     call timeObject.onExists(time, this.isInverted())
                 endif
 
