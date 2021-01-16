@@ -4669,3 +4669,83 @@ function GetCurrentPlayerStateValue takes nothing returns integer
 endfunction
 
 endlibrary
+
+/**
+ * Library which allows setting the exact level of a hero skill.
+ */
+library HeroAbilityLevel
+
+globals
+    private integer ABILITY_ID_UNLEARN = 'Aret'
+    private hashtable whichHashTable = InitHashtable()
+endglobals
+
+function RegisterHeroType takes integer unitTypeId, integer abilityId0, integer abilityId1, integer abilityId2, integer abilityId3, integer abilityId4 returns nothing
+    call SaveInteger(whichHashTable, unitTypeId, 0, abilityId0)
+    call SaveInteger(whichHashTable, unitTypeId, 1, abilityId1)
+    call SaveInteger(whichHashTable, unitTypeId, 2, abilityId2)
+    call SaveInteger(whichHashTable, unitTypeId, 3, abilityId3)
+    call SaveInteger(whichHashTable, unitTypeId, 4, abilityId4)
+endfunction
+
+private function SelectHeroSkillUntilLevel takes unit hero, integer abilityId, integer originalLevel, integer toBeSkilledAbilityId, integer toBeSkilledLevel returns nothing
+    local integer i
+    if (abilityId != 0) then
+        set i = 0
+        loop
+            exitwhen ((i == originalLevel) or (abilityId == toBeSkilledAbilityId and i == toBeSkilledLevel))
+            call SelectHeroSkill(hero, abilityId)
+            set i = i + 1
+        endloop
+    endif
+endfunction
+
+function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level returns nothing
+    local integer abilityId0 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 0)
+    local integer abilityId1 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 1)
+    local integer abilityId2 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 2)
+    local integer abilityId3 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 3)
+    local integer abilityId4 = LoadInteger(whichHashTable, GetUnitTypeId(hero), 4)
+    local integer abilityLevel0 = GetUnitAbilityLevelSwapped(abilityId0, hero)
+    local integer abilityLevel1 = GetUnitAbilityLevelSwapped(abilityId1, hero)
+    local integer abilityLevel2 = GetUnitAbilityLevelSwapped(abilityId2, hero)
+    local integer abilityLevel3 = GetUnitAbilityLevelSwapped(abilityId3, hero)
+    local integer abilityLevel4 = GetUnitAbilityLevelSwapped(abilityId4, hero)
+    local integer i = 0
+    call UnitAddAbility(hero, ABILITY_ID_UNLEARN)
+
+    // TODO the to be skilled ability has the highest priority in skilling?
+    if (abilityId0 == abilityId) then
+        call SelectHeroSkillUntilLevel(hero, abilityId0, abilityLevel0, abilityId, level)
+    elseif (abilityId1 == abilityId) then
+         call SelectHeroSkillUntilLevel(hero, abilityId1, abilityLevel1, abilityId, level)
+    elseif (abilityId2 == abilityId) then
+         call SelectHeroSkillUntilLevel(hero, abilityId2, abilityLevel2, abilityId, level)
+    elseif (abilityId3 == abilityId) then
+         call SelectHeroSkillUntilLevel(hero, abilityId3, abilityLevel3, abilityId, level)
+    elseif (abilityId4 == abilityId) then
+         call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level)
+    endif
+
+    if (abilityId0 != abilityId) then
+        call SelectHeroSkillUntilLevel(hero, abilityId0, abilityLevel0, abilityId, level)
+    endif
+
+    if (abilityId1 != abilityId) then
+        call SelectHeroSkillUntilLevel(hero, abilityId1, abilityLevel1, abilityId, level)
+    endif
+
+    if (abilityId2 != abilityId) then
+        call SelectHeroSkillUntilLevel(hero, abilityId2, abilityLevel2, abilityId, level)
+    endif
+
+    if (abilityId3 != abilityId) then
+        call SelectHeroSkillUntilLevel(hero, abilityId3, abilityLevel3, abilityId, level)
+    endif
+
+    if (abilityId4 != abilityId) then
+        call SelectHeroSkillUntilLevel(hero, abilityId4, abilityLevel4, abilityId, level)
+    endif
+endfunction
+
+endlibrary
