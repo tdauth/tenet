@@ -374,13 +374,20 @@ function ReverseStringExceptColorCodes takes string whichString returns string
     local integer i = StringLength(whichString)
     loop
         exitwhen (i <= 1)
+        // color code start -> we add the reversed string inside but keep the color code
         if (i >= colorCodeStartLength and SubString(whichString, i - colorCodeStartLength, i) == "|c") then
-            set result = result + SubString(whichString, i - colorCodeStartLength, i + colorCodeStartCompleteLength + colorCodeStartLength) + ReverseString(SubString(whichString, i + colorCodeStartCompleteLength, colorCodeEnd - colorCodeEndLength)) + SubString(whichString, colorCodeEnd - colorCodeEndLength, colorCodeEnd)
+            set result = result + SubString(whichString, i - colorCodeStartLength, i + colorCodeStartCompleteLength) + ReverseString(SubString(whichString, i + colorCodeStartCompleteLength, colorCodeEnd - colorCodeEndLength)) + SubString(whichString, colorCodeEnd - colorCodeEndLength, colorCodeEnd)
             set colorCodeEnd = -1
+        // color code end -> we store it to add it later
         elseif (i >= colorCodeEndLength and SubString(whichString, i - colorCodeEndLength, i) == "|r") then
             set colorCodeEnd = i
+        // currently not inside a color code block
         elseif (colorCodeEnd == -1) then
             set result = result + SubString(whichString, i - 1, i)
+        // missing color start
+        elseif (i < colorCodeStartLength and colorCodeEnd != -1) then
+            set result = result + SubString(whichString, i, colorCodeEnd)
+            set colorCodeEnd = -1
         endif
 
         set i = i - 1
@@ -1298,9 +1305,9 @@ struct ChangeEventPlayerChats extends ChangeEventImpl
         loop
             exitwhen (i == bj_MAX_PLAYERS)
             if (r.evaluate(message, Player(i)) != message) then
-                call DisplayTextToPlayer(Player(i), 0.0, 0.0, r.evaluate("|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ":" + message, Player(i)))
+                call DisplayTextToPlayer(Player(i), 0.0, 0.0, r.evaluate("|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ":|r " + message, Player(i)))
             else
-                call DisplayTimedTextFromPlayer(whichPlayer, 0.0, 0.0, 6.0, "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ": " + message)
+                call DisplayTextToPlayer(Player(i), 0.0, 0.0, "|cff" + PlayerColorToString(GetPlayerColor(whichPlayer)) + GetPlayerName(whichPlayer) + ":|r " + message)
             endif
             set i = i + 1
         endloop
