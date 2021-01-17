@@ -982,10 +982,12 @@ struct ChangeEventUnitDead extends ChangeEventUnit
             // TODO Is called again and again.
             call thistype.startTimer(this.getUnit(), 0.0, function thistype.timerFunctionReviveHero)
         elseif (IsUnitType(this.getUnit(), UNIT_TYPE_STRUCTURE)) then
+            //call PrintMsg("Recreate building " + GetUnitName(this.getUnit()))
             set newBuilding = CreateUnit(GetOwningPlayer(this.getUnit()), GetUnitTypeId(this.getUnit()), GetUnitX(this.getUnit()), GetUnitY(this.getUnit()), GetUnitFacing(this.getUnit()))
             call TimeObjectUnit.fromUnit(this.getUnit()).replaceUnit(newBuilding)
             call thistype.playDeathAnimationReverse(newBuilding)
         else
+            //call PrintMsg("Resurrecting " + GetUnitName(this.getUnit()))
             set caster = CreateUnit(GetOwningPlayer(this.getUnit()), RESURRECT_UNIT_TYPE_ID, GetUnitX(this.getUnit()), GetUnitY(this.getUnit()), GetUnitFacing(this.getUnit()))
             call UnitAddAbility(caster, 'Aloc')
             call ShowUnitHide(caster)
@@ -2022,6 +2024,8 @@ struct TimeObjectUnit extends TimeObjectImpl
         local ChangeEvent changeEventUnitDead = ChangeEventUnitDead.create(whichUnit)
         local ChangeEvent changeEventUnitAnimation = ChangeEventUnitAnimation.create(this, UnitTypes.getDeathAnimationIndex(GetUnitTypeId(GetTriggerUnit())), UnitTypes.getDeathAnimationDuration(GetUnitTypeId(GetTriggerUnit())))
         call this.addThreeChangeEventsNextToEachOther(this.getTime().getTime(), changeEventUnitAlive, changeEventUnitDead, changeEventUnitAnimation)
+
+        //call PrintMsg("Death event of unit " + GetUnitName(whichUnit))
 
         // guard makes sure that the construction progress is not continued
         call this.cancelConstruction()
