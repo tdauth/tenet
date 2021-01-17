@@ -809,6 +809,34 @@ struct ChangeEventUnitLevel extends ChangeEventUnit
 
 endstruct
 
+struct ChangeEventUnitSkill extends ChangeEventUnit
+    private integer abilityId
+    private integer level
+
+    public stub method onChange takes integer time returns nothing
+        set this.level = GetUnitAbilityLevel(this.getUnit(), this.abilityId)
+        if (not SupportsHeroTypeForAbilityLevel(GetUnitTypeId(this.getUnit()))) then
+            call PrintMsg("Unit type for unit " + GetUnitName(this.getUnit()) + " is not supported for changing the hero ability level.")
+        endif
+    endmethod
+
+    public stub method restore takes nothing returns nothing
+        // TODO This has some delay!
+        call SetHeroAbilityLevel(this.getUnit(), this.abilityId, this.level - 1)
+        if (not SupportsHeroTypeForAbilityLevel(GetUnitTypeId(this.getUnit()))) then
+            call PrintMsg("Unit type for unit " + GetUnitName(this.getUnit()) + " is not supported for changing the hero ability level.")
+        endif
+    endmethod
+
+    public static method create takes unit whichUnit, integer abilityId returns thistype
+        local thistype this = thistype.allocate(whichUnit)
+        set this.abilityId = abilityId
+
+        return this
+    endmethod
+
+endstruct
+
 struct ChangeEventUnitPickupItem extends ChangeEventUnit
     private item whichItem
 
@@ -1762,6 +1790,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private trigger damageTrigger
     private trigger attackTrigger
     private trigger levelTrigger
+    private trigger skillTrigger
     private trigger acquireTargetTrigger
     private trigger loadTrigger
     private trigger unloadTrigger
@@ -2000,6 +2029,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitLevel.create(GetTriggerUnit()))
     endmethod
 
+    private static method triggerFunctionSkill takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitSkill.create(GetTriggerUnit(), GetLearnedSkillBJ()))
+    endmethod
+
     private static method triggerFunctionAcquireTarget takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         local ChangeEventUnitFacing changeEventFacing = ChangeEventUnitFacing.create(GetTriggerUnit())
@@ -2160,6 +2194,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         call TriggerAddAction(this.levelTrigger, function thistype.triggerFunctionLevel)
         call SaveData(this.levelTrigger, this)
 
+        set this.skillTrigger = CreateTrigger()
+        call TriggerRegisterUnitEvent(this.skillTrigger, whichUnit, EVENT_UNIT_HERO_SKILL)
+        call TriggerAddAction(this.skillTrigger, function thistype.triggerFunctionSkill)
+        call SaveData(this.skillTrigger, this)
+
         set this.acquireTargetTrigger = CreateTrigger()
         call TriggerRegisterUnitEvent(this.acquireTargetTrigger, whichUnit, EVENT_UNIT_ACQUIRED_TARGET)
         call TriggerAddAction(this.acquireTargetTrigger, function thistype.triggerFunctionAcquireTarget)
@@ -2252,6 +2291,10 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.levelTrigger)
         call DestroyTrigger(this.levelTrigger)
         set this.levelTrigger = null
+
+        call FlushData(this.skillTrigger)
+        call DestroyTrigger(this.skillTrigger)
+        set this.skillTrigger = null
 
         call FlushData(this.acquireTargetTrigger)
         call DestroyTrigger(this.acquireTargetTrigger)
@@ -4721,12 +4764,16 @@ private function PrintMsg takes string msg returns nothing
     call DisplayTextToForce(GetPlayersAll(), msg)
 endfunction
 
-function RegisterHeroType takes integer unitTypeId, integer abilityId0, integer abilityId1, integer abilityId2, integer abilityId3, integer abilityId4 returns nothing
+function RegisterHeroTypeForAbilityLevel takes integer unitTypeId, integer abilityId0, integer abilityId1, integer abilityId2, integer abilityId3, integer abilityId4 returns nothing
     call SaveInteger(whichHashTable, unitTypeId, 0, abilityId0)
     call SaveInteger(whichHashTable, unitTypeId, 1, abilityId1)
     call SaveInteger(whichHashTable, unitTypeId, 2, abilityId2)
     call SaveInteger(whichHashTable, unitTypeId, 3, abilityId3)
     call SaveInteger(whichHashTable, unitTypeId, 4, abilityId4)
+endfunction
+
+function SupportsHeroTypeForAbilityLevel takes integer unitTypeId returns boolean
+    return HaveSavedInteger(whichHashTable, unitTypeId, 0)
 endfunction
 
 private function GetHeroSkillLevel takes unit hero, integer abilityId returns integer
@@ -4886,6 +4933,9 @@ endfunction
 // TODO Not only guard calls but queue them?
 function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level returns nothing
     if (not HaveSavedBoolean(whichHashTable, GetHandleId(hero), 0) or LoadBoolean(whichHashTable, GetHandleId(hero), 0)) then
+        if (not SupportsHeroTypeForAbilityLevel(GetUnitTypeId(hero))) then
+            call PrintMsg("Warning: Unit type ID " + GetObjectName(GetUnitTypeId(hero)) + " is not supported for changing the hero ability level.")
+        endif
         call SaveBoolean(whichHashTable, GetHandleId(hero), 0, false)
         call SetHeroAbilityLevelEx(hero, abilityId, level)
     endif
