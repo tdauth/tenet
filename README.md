@@ -1,6 +1,6 @@
 # Tenet
 
-A [Tenet](https://www.imdb.com/title/tt6723592)-style prototype map.
+A [Tenet](https://www.imdb.com/title/tt6723592)-style prototype map for Warcraft III: Reforged.
 
 ## Concept of Time Inversion
 
