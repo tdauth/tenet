@@ -998,23 +998,32 @@ struct ChangeEventUnitDead extends ChangeEventUnit
 endstruct
 
 struct ChangeEventUnitExists extends ChangeEventUnit
+    private player owner
 
     public stub method onChange takes integer time returns nothing
         //call PrintMsg("|cff00ff00Hurray: Restore that unit did exist (correct time direction) for " + GetUnitName(this.getUnit()) + "|r")
-        call thistype.apply(this.getUnit())
+        call thistype.apply(this.getUnit(), this.owner)
     endmethod
 
     public stub method restore takes nothing returns nothing
         //call PrintMsg("|cff00ff00Hurray: Restore that unit did exist for " + GetUnitName(this.getUnit()) + "|r")
-        call thistype.apply(this.getUnit())
+        call thistype.apply(this.getUnit(), this.owner)
     endmethod
 
-    public static method apply takes unit whichUnit returns nothing
+    public static method apply takes unit whichUnit, player owner returns nothing
         call ShowUnitShow(whichUnit)
         call PauseUnitBJ(false, whichUnit)
         if (IsUnitType(whichUnit, UNIT_TYPE_HERO)) then
             call BlzSetUnitBooleanFieldBJ(whichUnit, UNIT_BF_HERO_HIDE_HERO_INTERFACE_ICON, false)
         endif
+        call SetUnitOwner(whichUnit, owner, true)
+    endmethod
+
+    public static method create takes unit whichUnit, player owner returns thistype
+        local thistype this = thistype.allocate(whichUnit)
+        set this.owner = owner
+
+        return this
     endmethod
 
 endstruct
@@ -1036,6 +1045,8 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
         if (IsUnitType(whichUnit, UNIT_TYPE_HERO)) then
             call BlzSetUnitBooleanFieldBJ(whichUnit, UNIT_BF_HERO_HIDE_HERO_INTERFACE_ICON, true)
         endif
+        // hides the hero icon
+        call SetUnitOwner(whichUnit, Player(PLAYER_NEUTRAL_PASSIVE), true)
     endmethod
 
 endstruct
@@ -1783,6 +1794,7 @@ endstruct
 
 struct TimeObjectUnit extends TimeObjectImpl
     private unit whichUnit
+    private player originalOwner
     private boolean isMoving
     private boolean isRepairing
     private boolean isBeingConstructed
@@ -1825,7 +1837,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method onExists takes integer time, boolean timeIsInverted returns nothing
-        call ChangeEventUnitExists.apply(this.whichUnit)
+        call ChangeEventUnitExists.apply(this.whichUnit, this.originalOwner)
     endmethod
 
     public stub method shouldStopRecordingChanges takes nothing returns boolean
@@ -1872,6 +1884,10 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public method getUnit takes nothing returns unit
         return this.whichUnit
+    endmethod
+
+    public method getOriginalOwner takes nothing returns player
+        return this.originalOwner
     endmethod
 
     public method addChangeEventPosition takes integer time, real x, real y, real facing returns nothing
@@ -2244,9 +2260,10 @@ struct TimeObjectUnit extends TimeObjectImpl
         call SaveData(this.manaTrigger, this)
     endmethod
 
-    public static method create takes Time whichTime, unit whichUnit, integer startTime, boolean inverted returns thistype
+    public static method create takes Time whichTime, unit whichUnit, player originalOwner, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichUnit = whichUnit
+        set this.originalOwner = originalOwner
         set this.isMoving = false
         set this.isRepairing = false
         set this.isBeingConstructed = false
@@ -2364,8 +2381,8 @@ struct TimeObjectGoldmine extends TimeObjectUnit
         call this.startRecordingChanges(time)
     endmethod
 
-    public static method create takes Time whichTime, unit whichUnit, integer startTime, boolean inverted returns thistype
-        local thistype this = thistype.allocate(whichTime, whichUnit, startTime, inverted)
+    public static method create takes Time whichTime, unit whichUnit, player originalOwner, integer startTime, boolean inverted returns thistype
+        local thistype this = thistype.allocate(whichTime, whichUnit, originalOwner, startTime, inverted)
         set this.resourceAmount = GetResourceAmount(whichUnit)
 
         return this
@@ -2740,20 +2757,20 @@ struct TimeImpl extends Time
     endmethod
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
-        local TimeObjectUnit result = TimeObjectUnit.create(this, whichUnit, this.getTime(), inverted)
+        local TimeObjectUnit result = TimeObjectUnit.create(this, whichUnit, GetOwningPlayer(whichUnit), this.getTime(), inverted)
         //call PrintMsg("Calling onExists for " + this.getName() + " at time " + I2S(time))
         // adding these two change events will lead to hiding and pausing the unit before it existed
-        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
+        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit, GetOwningPlayer(whichUnit)), ChangeEventUnitDoesNotExist.create(whichUnit))
         call this.addObject(result)
 
         return result
     endmethod
 
     public stub method addGoldmine takes boolean inverted, unit whichUnit returns TimeObject
-        local TimeObjectGoldmine result = TimeObjectGoldmine.create(this, whichUnit, this.getTime(), inverted)
+        local TimeObjectGoldmine result = TimeObjectGoldmine.create(this, whichUnit, GetOwningPlayer(whichUnit), this.getTime(), inverted)
         //call PrintMsg("Calling onExists for " + this.getName() + " at time " + I2S(time))
         // adding these two change events will lead to hiding and pausing the unit before it existed
-        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
+        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit, GetOwningPlayer(whichUnit)), ChangeEventUnitDoesNotExist.create(whichUnit))
         call this.addObject(result)
 
         return result
@@ -2839,7 +2856,7 @@ struct TimeImpl extends Time
         local TimeObject timeObject = TimeObjectUnit.fromUnit(whichUnit)
         if (timeObject != 0) then
             call timeObject.stopRecordingChanges(this.getTime())
-            call timeObject.addTwoChangeEventsNextToEachOther(this.getTime(), ChangeEventUnitDoesNotExist.create(whichUnit), ChangeEventUnitExists.create(whichUnit))
+            call timeObject.addTwoChangeEventsNextToEachOther(this.getTime(), ChangeEventUnitDoesNotExist.create(whichUnit), ChangeEventUnitExists.create(whichUnit, GetOwningPlayer(whichUnit)))
             call ChangeEventUnitDoesNotExist.apply(whichUnit)
 
             return true
