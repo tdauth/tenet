@@ -1012,6 +1012,9 @@ struct ChangeEventUnitExists extends ChangeEventUnit
     public static method apply takes unit whichUnit returns nothing
         call ShowUnitShow(whichUnit)
         call PauseUnitBJ(false, whichUnit)
+        if (IsUnitType(whichUnit, UNIT_TYPE_HERO)) then
+            call BlzSetUnitBooleanFieldBJ(whichUnit, UNIT_BF_HERO_HIDE_HERO_INTERFACE_ICON, false)
+        endif
     endmethod
 
 endstruct
@@ -1030,6 +1033,9 @@ struct ChangeEventUnitDoesNotExist extends ChangeEventUnit
     public static method apply takes unit whichUnit returns nothing
         call ShowUnitHide(whichUnit)
         call PauseUnitBJ(true, whichUnit)
+        if (IsUnitType(whichUnit, UNIT_TYPE_HERO)) then
+            call BlzSetUnitBooleanFieldBJ(whichUnit, UNIT_BF_HERO_HIDE_HERO_INTERFACE_ICON, true)
+        endif
     endmethod
 
 endstruct
@@ -1819,9 +1825,6 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method onExists takes integer time, boolean timeIsInverted returns nothing
-        //call PrintMsg("Calling onExists for " + this.getName() + " at time " + I2S(time))
-        // adding these two change events will lead to hiding and pausing the unit before it existed
-        call this.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
         call ChangeEventUnitExists.apply(this.whichUnit)
     endmethod
 
@@ -2342,12 +2345,14 @@ struct TimeObjectGoldmine extends TimeObjectUnit
     private integer resourceAmount
 
     public stub method onExists takes integer time, boolean timeIsInverted returns nothing
+        call super.onExists(time, timeIsInverted)
         if (not timeIsInverted) then
             call this.startRecordingChanges(time)
         endif
     endmethod
 
     public stub method recordChanges takes integer time returns nothing
+        call super.recordChanges(time)
         if (GetResourceAmount(this.getUnit()) != this.resourceAmount) then
             call this.addChangeEvent(time, ChangeEventUnitResourceAmount.create(this.getUnit(), this.resourceAmount))
             set this.resourceAmount = GetResourceAmount(this.getUnit())
@@ -2355,6 +2360,7 @@ struct TimeObjectGoldmine extends TimeObjectUnit
     endmethod
 
     public stub method onTimeInvertsSame takes integer time returns nothing
+        call super.onTimeInvertsSame(time)
         call this.startRecordingChanges(time)
     endmethod
 
@@ -2375,8 +2381,6 @@ struct TimeObjectItem extends TimeObjectImpl
     endmethod
 
     public stub method onExists takes integer time, boolean timeIsInverted returns nothing
-        // adding these two change events will lead to hiding and pausing the unit before it existed
-        call this.addTwoChangeEventsNextToEachOther(time, ChangeEventItemExists.create(whichItem), ChangeEventItemDoesNotExist.create(whichItem))
         call ChangeEventItemExists.apply(this.whichItem)
     endmethod
 
@@ -2408,8 +2412,6 @@ struct TimeObjectDestructable extends TimeObjectImpl
     endmethod
 
     public stub method onExists takes integer time, boolean timeIsInverted returns nothing
-        // adding these two change events will lead to hiding and pausing the destructable before it existed
-        call this.addTwoChangeEventsNextToEachOther(time, ChangeEventDestructableExists.create(whichDestructable), ChangeEventDestructableDoesNotExist.create(whichDestructable))
         call ChangeEventDestructableExists.apply(this.whichDestructable)
     endmethod
 
@@ -2739,6 +2741,9 @@ struct TimeImpl extends Time
 
     public stub method addUnit takes boolean inverted, unit whichUnit returns TimeObject
         local TimeObjectUnit result = TimeObjectUnit.create(this, whichUnit, this.getTime(), inverted)
+        //call PrintMsg("Calling onExists for " + this.getName() + " at time " + I2S(time))
+        // adding these two change events will lead to hiding and pausing the unit before it existed
+        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
         call this.addObject(result)
 
         return result
@@ -2746,6 +2751,9 @@ struct TimeImpl extends Time
 
     public stub method addGoldmine takes boolean inverted, unit whichUnit returns TimeObject
         local TimeObjectGoldmine result = TimeObjectGoldmine.create(this, whichUnit, this.getTime(), inverted)
+        //call PrintMsg("Calling onExists for " + this.getName() + " at time " + I2S(time))
+        // adding these two change events will lead to hiding and pausing the unit before it existed
+        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventUnitExists.create(whichUnit), ChangeEventUnitDoesNotExist.create(whichUnit))
         call this.addObject(result)
 
         return result
@@ -2753,6 +2761,8 @@ struct TimeImpl extends Time
 
     public stub method addItem takes boolean inverted, item whichItem returns TimeObject
         local TimeObjectItem result = TimeObjectItem.create(this, whichItem, this.getTime(), inverted)
+        // adding these two change events will lead to hiding and pausing the unit before it existed
+        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventItemExists.create(whichItem), ChangeEventItemDoesNotExist.create(whichItem))
         call this.addObject(result)
 
         return result
@@ -2760,6 +2770,8 @@ struct TimeImpl extends Time
 
     public stub method addDestructable takes boolean inverted, destructable whichDestructable returns TimeObject
         local TimeObjectDestructable result = TimeObjectDestructable.create(this, whichDestructable, this.getTime(), inverted)
+        // adding these two change events will lead to hiding and pausing the destructable before it existed
+        call result.addTwoChangeEventsNextToEachOther(time, ChangeEventDestructableExists.create(whichDestructable), ChangeEventDestructableDoesNotExist.create(whichDestructable))
         call this.addObject(result)
 
         return result
