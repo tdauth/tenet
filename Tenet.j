@@ -4616,7 +4616,7 @@ private function TriggerConditionUnitStateDetection takes nothing returns boolea
     //call PrintMsg("Change state " + I2S(UnitState2I(state)) + " of unit " + GetUnitName(GetTriggerUnit()) + " with " + I2S(unitStateDetectionTriggersSize) + " triggers.")
     loop
         exitwhen (i == unitStateDetectionTriggersSize)
-        if (ConvertUnitState(LoadInteger(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT_STATE)) == state and LoadUnitHandle(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT) == GetTriggerUnit()) then
+        if (IsTriggerEnabled(unitStateDetectionTriggers[i]) and ConvertUnitState(LoadInteger(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT_STATE)) == state and LoadUnitHandle(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT) == GetTriggerUnit()) then
             //call PrintMsg("One matching trigger with handle ID " + I2S(GetHandleId(unitStateDetectionTriggers[i])))
             call TriggerExecute(unitStateDetectionTriggers[i])
             call SaveReal(unitStateDetectionHashTable, GetHandleId(unitStateDetectionTriggers[i]), KEY_UNIT_STATE_VALUE, current) // update value
@@ -4723,7 +4723,7 @@ private function TriggerConditionPlayerStateDetection takes nothing returns bool
     //call PrintMsg("Change state " + I2S(PlayerState2I(state)) + " of player " + GetPlayerName(GetTriggerPlayer()) + " with " + I2S(playerStateDetectionTriggersSize) + " triggers.")
     loop
         exitwhen (i == playerStateDetectionTriggersSize)
-        if (ConvertPlayerState(LoadInteger(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER_STATE)) == state and LoadPlayerHandle(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER) == GetTriggerPlayer()) then
+        if (IsTriggerEnabled(playerStateDetectionTriggers[i]) and ConvertPlayerState(LoadInteger(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER_STATE)) == state and LoadPlayerHandle(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER) == GetTriggerPlayer()) then
             //call PrintMsg("One matching trigger with handle ID " + I2S(GetHandleId(unitStateDetectionTriggers[i])))
             call TriggerExecute(playerStateDetectionTriggers[i])
             call SaveInteger(playerStateDetectionHashTable, GetHandleId(playerStateDetectionTriggers[i]), KEY_PLAYER_STATE_VALUE, current) // update value
