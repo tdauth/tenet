@@ -1716,7 +1716,12 @@ struct TimeObjectTimeOfDay extends TimeObjectImpl
     endmethod
 
     public stub method onTimeInvertsSame takes integer time returns nothing
+        call SetTimeOfDayScalePercentBJ(100.00)
         call this.startRecordingChanges(time)
+    endmethod
+
+    public stub method onTimeInvertsDifferent takes integer time returns nothing
+        call SetTimeOfDayScalePercentBJ(0.00)
     endmethod
 
     public static method create takes Time whichTime, integer startTime, boolean inverted returns thistype
@@ -2893,7 +2898,6 @@ struct TimeImpl extends Time
         set gateGroup = this.addGateGroup(whichGroup)
 
         if (FirstOfGroup(gateGroup) != null) then
-            call SetTimeOfDayScalePercentBJ(0.00)
             call this.setInverted(true)
 
             call this.addGroupCopies(true, owner, gateGroup, x, y, facing)
@@ -2919,7 +2923,6 @@ struct TimeImpl extends Time
         set gateGroup = this.addGateGroup(whichGroup)
 
         if (FirstOfGroup(gateGroup) != null) then
-            call SetTimeOfDayScalePercentBJ(100.00)
             call this.setInverted(false)
 
             call this.addGroupCopies(false, owner, gateGroup, x, y, facing)
