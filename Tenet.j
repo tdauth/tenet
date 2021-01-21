@@ -366,6 +366,7 @@ library Tenet initializer Init requires MapData, TenetUtility, LinkedList, Rever
 globals
     private ReverseStringFunctionInterface reverseStringFunction = 0
     constant real TIMER_PERIODIC_INTERVAL = 0.10
+    constant string INVERSION_EFFECT_PATH = "Abilities\\Spells\\Other\\Silence\\SilenceTarget.mdx"
 endglobals
 
 function interface ReverseStringFunctionInterface takes string whichString, player whichPlayer returns string
@@ -2277,6 +2278,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.isRepairing = false
         set this.isBeingConstructed = false
 
+        if (inverted) then
+            call BlzSetUnitName(whichUnit, GetUnitName(whichUnit) + " Inverted")
+            call SaveEffect(whichUnit, AddSpecialEffectTargetUnitBJ("overhead", whichUnit, INVERSION_EFFECT_PATH))
+        endif
+
         call this.createTriggers()
 
         call SaveData(this.whichUnit, this)
@@ -2355,6 +2361,10 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public method onDestroy takes nothing returns nothing
+        if (this.isInverted()) then
+            call DestroyEffect(LoadEffect(whichUnit))
+        endif
+
         call FlushData(this.whichUnit)
         set this.whichUnit = null
 
@@ -2413,6 +2423,10 @@ struct TimeObjectItem extends TimeObjectImpl
     public static method create takes Time whichTime, item whichItem, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate(whichTime, startTime, inverted)
         set this.whichItem = whichItem
+
+        if (inverted) then
+            call BlzSetItemName(whichItem, GetItemName(whichItem) + " Inverted")
+        endif
 
         call SaveData(this.whichItem, this)
 
@@ -2834,10 +2848,23 @@ struct TimeImpl extends Time
             set first = FirstOfGroup(copy)
             exitwhen (first == null)
             call GroupAddUnit(result, TimeObjectUnit(this.addUnit(inverted, first)).getUnit())
+
+            if (IsUnitType(first, UNIT_TYPE_HERO)) then
+                set i = 0
+                loop
+                    exitwhen (i == bj_MAX_INVENTORY)
+                    if (UnitItemInSlot(first, i) != null) then
+                        call this.addItem(inverted, UnitItemInSlot(first, i))
+                    endif
+                    set i = i + 1
+                endloop
+            endif
+
             call GroupRemoveUnit(copy, first)
         endloop
 
         call DestroyGroup(copy)
+        set copy = null
 
         return result
     endmethod
