@@ -1881,6 +1881,9 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     public stub method onTimeInvertsSame takes integer time returns nothing
         call EnableTrigger(this.manaTrigger)
+        if (IsUnitType(this.whichUnit, UNIT_TYPE_HERO)) then
+            call SuspendHeroXPBJ(false, this.whichUnit)
+        endif
     endmethod
 
     public stub method onTimeInvertsDifferent takes integer time returns nothing
@@ -1888,6 +1891,10 @@ struct TimeObjectUnit extends TimeObjectImpl
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
         call DisableTrigger(this.manaTrigger)
         // TODO Disable mana and life regeneration of the unit
+
+        if (IsUnitType(this.whichUnit, UNIT_TYPE_HERO)) then
+            call SuspendHeroXPBJ(true, this.whichUnit)
+        endif
     endmethod
 
     public method getUnit takes nothing returns unit
