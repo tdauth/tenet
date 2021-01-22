@@ -534,7 +534,10 @@ interface Time
      * After calling this method, the time of day will be stored and inverted as well when the global time is inverted.
      */
     public method addTimeOfDay takes nothing returns TimeObject
-    public method addMusic takes string whichMusic, string whichMusicInverted returns nothing
+    /*
+     * The start time and end time are necessary boundaries for the music.
+     */
+    public method addMusic takes string whichMusic, string whichMusicInverted, integer startTime, integer endTime returns nothing
     public method addUnit takes boolean inverted, unit whichUnit returns TimeObject
     public method addGoldmine takes boolean inverted, unit whichUnit returns TimeObject
     public method addItem takes boolean inverted, item whichItem returns TimeObject
@@ -1683,7 +1686,7 @@ struct TimeObjectMusic extends TimeObjectImpl
         local real offset = I2R(time) / TIMER_PERIODIC_INTERVAL
         local real musicDuration = I2R(GetSoundFileDuration(this.whichMusicInverted))
         local real startOffset = musicDuration - ModuloReal(offset, musicDuration)
-        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
         call ClearMapMusic()
         call SetMapMusicRandomBJ(this.whichMusic)
         call PlayMusicExBJ(this.whichMusic, startOffset, 0)
@@ -1712,7 +1715,7 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         local real offset = I2R(time) / TIMER_PERIODIC_INTERVAL
         local real musicDuration = I2R(GetSoundFileDuration(this.whichMusic))
         local real startOffset = musicDuration - ModuloReal(offset, musicDuration)
-        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
         call ClearMapMusic()
         call SetMapMusicRandomBJ(this.whichMusicInverted)
         call PlayMusicExBJ(this.whichMusicInverted, startOffset, 0)
@@ -2707,9 +2710,9 @@ struct TimeImpl extends Time
         return timeObjectTimeOfDay
     endmethod
 
-    public stub method addMusic takes string whichMusic, string whichMusicInverted returns nothing
-        local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this, this.getTime(), whichMusic, whichMusicInverted)
-        local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this, this.getTime(), whichMusic, whichMusicInverted)
+    public stub method addMusic takes string whichMusic, string whichMusicInverted, integer startTime, integer endTime returns nothing
+        local TimeObjectMusic timeObjectMusic = TimeObjectMusic.create(this, startTime, whichMusic, whichMusicInverted)
+        local TimeObjectMusicInverted timeObjectMusicInverted = TimeObjectMusicInverted.create(this, endTime, whichMusic, whichMusicInverted)
         call this.addObject(timeObjectMusic)
         call this.addObject(timeObjectMusicInverted)
     endmethod
