@@ -606,68 +606,6 @@ struct ChangeEventTimeOfDay extends ChangeEventImpl
 
 endstruct
 
-struct ChangeEventMusicTime extends ChangeEventImpl
-    private Time whichTime
-    private string whichMusic
-    private string whichMusicInverted
-    private real offset
-
-    public stub method onChange takes integer time returns nothing
-        set this.offset = I2R(time) * TIMER_PERIODIC_INTERVAL
-    endmethod
-
-    public stub method restore takes nothing returns nothing
-        // TODO Handle the negative offset separately!
-        local real musicDuration = I2R(GetSoundFileDuration(this.whichMusic))
-        local real startOffset = musicDuration - ModuloReal(this.offset, musicDuration)
-        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(this.offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
-        call ClearMapMusic()
-        call SetMapMusicRandomBJ(this.whichMusicInverted)
-        call PlayMusicExBJ(this.whichMusicInverted, startOffset, 0)
-    endmethod
-
-    public static method create takes Time whichTime, string whichMusic, string whichMusicInverted returns thistype
-        local thistype this = thistype.allocate()
-        set this.whichTime = whichTime
-        set this.whichMusic = whichMusic
-        set this.whichMusicInverted = whichMusicInverted
-
-        return this
-    endmethod
-
-endstruct
-
-struct ChangeEventMusicTimeInverted extends ChangeEventImpl
-    private Time whichTime
-    private string whichMusic
-    private string whichMusicInverted
-    private real offset
-
-    public stub method onChange takes integer time returns nothing
-        set this.offset = I2R(time) * TIMER_PERIODIC_INTERVAL
-    endmethod
-
-    public stub method restore takes nothing returns nothing
-        // TODO Handle the negative offset separately!
-        local real musicDuration = I2R(GetSoundFileDuration(this.whichMusicInverted))
-        local real startOffset = musicDuration - ModuloReal(this.offset, musicDuration)
-        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(this.offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
-        call ClearMapMusic()
-        call SetMapMusicRandomBJ(this.whichMusic)
-        call PlayMusicExBJ(this.whichMusic, startOffset, 0)
-    endmethod
-
-    public static method create takes Time whichTime, string whichMusic, string whichMusicInverted returns thistype
-        local thistype this = thistype.allocate()
-        set this.whichTime = whichTime
-        set this.whichMusic = whichMusic
-        set this.whichMusicInverted = whichMusicInverted
-
-        return this
-    endmethod
-
-endstruct
-
 struct ChangeEventUnit extends ChangeEventImpl
     private unit whichUnit
 
@@ -1740,20 +1678,16 @@ struct TimeObjectMusic extends TimeObjectImpl
         return "music " + super.getName()
     endmethod
 
-    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
-        if (not timeIsInverted) then
-            call this.startRecordingChanges(time)
-        endif
-    endmethod
-
-    public stub method recordChanges takes integer time returns nothing
-        call this.getTimeLine().flushAllFrom(time - 1)
-        call this.addChangeEvent(time, ChangeEventMusicTime.create(this.getTime(), this.whichMusic, this.whichMusicInverted))
-        //call PrintMsg("recordChanges for music")
-    endmethod
-
     public stub method onTimeInvertsSame takes integer time returns nothing
-        call this.startRecordingChanges(time)
+        // TODO Handle the negative offset separately!
+        local real offset = I2R(time) / TIMER_PERIODIC_INTERVAL
+        local real musicDuration = I2R(GetSoundFileDuration(this.whichMusicInverted))
+        local real startOffset = musicDuration - ModuloReal(offset, musicDuration)
+        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
+        call ClearMapMusic()
+        call SetMapMusicRandomBJ(this.whichMusic)
+        call PlayMusicExBJ(this.whichMusic, startOffset, 0)
+        call PrintMsg("Start normal music at " + R2S(startOffset))
     endmethod
 
     public static method create takes Time whichTime, integer startTime, string whichMusic, string whichMusicInverted returns thistype
@@ -1773,22 +1707,16 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         return "music inverted " + super.getName()
     endmethod
 
-    public stub method onExists takes integer time, boolean timeIsInverted returns nothing
-        if (timeIsInverted) then
-            call this.startRecordingChanges(time)
-            // initial event to change the music forward
-            call this.recordChanges(time)
-        endif
-    endmethod
-
-    public stub method recordChanges takes integer time returns nothing
-        call this.getTimeLine().flushAllFrom(time + 1)
-        call this.addChangeEvent(time, ChangeEventMusicTimeInverted.create(this.getTime(), this.whichMusic, this.whichMusicInverted))
-        //call PrintMsg("recordChanges for music")
-    endmethod
-
     public stub method onTimeInvertsSame takes integer time returns nothing
-        call this.startRecordingChanges(time)
+        // TODO Handle the negative offset separately!
+        local real offset = I2R(time) / TIMER_PERIODIC_INTERVAL
+        local real musicDuration = I2R(GetSoundFileDuration(this.whichMusic))
+        local real startOffset = musicDuration - ModuloReal(offset, musicDuration)
+        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
+        call ClearMapMusic()
+        call SetMapMusicRandomBJ(this.whichMusicInverted)
+        call PlayMusicExBJ(this.whichMusicInverted, startOffset, 0)
+        call PrintMsg("Start inverted music at " + R2S(startOffset))
     endmethod
 
     public static method create takes Time whichTime, integer startTime, string whichMusic, string whichMusicInverted returns thistype
