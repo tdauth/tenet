@@ -35,7 +35,8 @@ TODO Add Screenshots.
 
 ## Concept of Time Inversion
 
-* There is a global time which consist of a global clock (integer) and added objects and is either inverted or not.
+* There is a global time which consist of a global clock (integer) which is increased constantly and added objects.
+* The global time is either inverted or not.
 * Every added object/unit is either inverted or not.
 * Every object/unit has its own time line.
 * A time line starts at a certain time (global clock) and consist of certain time points (time frame).
