@@ -1685,12 +1685,12 @@ struct TimeObjectMusic extends TimeObjectImpl
         // TODO Handle the negative offset separately!
         local real offset = I2R(time) / TIMER_PERIODIC_INTERVAL
         local real musicDuration = I2R(GetSoundFileDuration(this.whichMusicInverted))
-        local real startOffset = musicDuration - ModuloReal(offset, musicDuration)
-        call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
+        local real startOffset = ModuloReal(offset, musicDuration)
+        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
         call ClearMapMusic()
         call SetMapMusicRandomBJ(this.whichMusic)
         call PlayMusicExBJ(this.whichMusic, startOffset, 0)
-        call PrintMsg("Start normal music at " + R2S(startOffset))
+        //call PrintMsg("Start normal music at " + R2S(startOffset))
     endmethod
 
     public static method create takes Time whichTime, integer startTime, string whichMusic, string whichMusicInverted returns thistype
@@ -1715,11 +1715,11 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         local real offset = I2R(time) / TIMER_PERIODIC_INTERVAL
         local real musicDuration = I2R(GetSoundFileDuration(this.whichMusic))
         local real startOffset = musicDuration - ModuloReal(offset, musicDuration)
-        call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
         call ClearMapMusic()
         call SetMapMusicRandomBJ(this.whichMusicInverted)
         call PlayMusicExBJ(this.whichMusicInverted, startOffset, 0)
-        call PrintMsg("Start inverted music at " + R2S(startOffset))
+        //call PrintMsg("Start inverted music at " + R2S(startOffset))
     endmethod
 
     public static method create takes Time whichTime, integer startTime, string whichMusic, string whichMusicInverted returns thistype
