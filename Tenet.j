@@ -2031,8 +2031,8 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private method updateOrder takes integer orderId returns nothing
         //call PrintMsg("Order for unit: " + GetUnitName(this.whichUnit) + " with time object " + I2S(this))
-        // TODO Add return resources, picking up item orders.
-        if (orderId == String2OrderIdBJ("move") or orderId == String2OrderIdBJ("smart") or orderId == String2OrderIdBJ("harvest")) then
+        // TODO Add picking up item orders and all orders which require some movement to a certain point or unit. We could simply check if it's not an immediate order but this does not really set the movement since it might be an order where the unit goes somewhere and performs something.
+        if (orderId == String2OrderIdBJ("move") or orderId == String2OrderIdBJ("smart") or orderId == String2OrderIdBJ("harvest") or orderId == String2OrderIdBJ("resumeharvesting")) then
             //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
             set this.isMoving = true
             set this.isStanding = false
