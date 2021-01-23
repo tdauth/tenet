@@ -1838,7 +1838,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
         // Some stand animations are quite visible and need to be played backwards. Others are not that important.
         if (isStanding and UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
-            call PrintMsg("Record stand animation for unit " + GetUnitName(this.getUnit()))
+            //call PrintMsg("Record stand animation for unit " + GetUnitName(this.getUnit()))
             call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getStandAnimationIndex(GetUnitTypeId(this.getUnit())), UnitTypes.getStandAnimationDuration(GetUnitTypeId(this.getUnit()))))
         endif
     endmethod
@@ -1849,21 +1849,88 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method onTimeInvertsSame takes integer time returns nothing
+        // prevents further interactions
+        call SetUnitInvulnerable(this.whichUnit, false)
+
+        call EnableTrigger(this.orderTrigger)
+        call EnableTrigger(this.pickupTrigger)
+        call EnableTrigger(this.dropTrigger)
+        call EnableTrigger(this.pawnTrigger)
+        call EnableTrigger(this.useTrigger)
+        call EnableTrigger(this.deathTrigger)
+        call EnableTrigger(this.damageTrigger)
+        call EnableTrigger(this.attackTrigger)
+        call EnableTrigger(this.levelTrigger)
+        call EnableTrigger(this.skillTrigger)
+        call EnableTrigger(this.acquireTargetTrigger)
+        call EnableTrigger(this.loadTrigger)
+        call EnableTrigger(this.unloadTrigger)
+        call EnableTrigger(this.startConstructionTrigger)
+        call EnableTrigger(this.cancelConstructionTrigger)
+        call EnableTrigger(this.finishConstructionTrigger)
+        call EnableTrigger(this. beginResearchTrigger)
+        call EnableTrigger(this.cancelResearchTrigger)
+        call EnableTrigger(this.finishResearchTrigger)
+        call EnableTrigger(this.beginUpgradeTrigger)
+        call EnableTrigger(this.cancelUpgradeTrigger)
+        call EnableTrigger(this.finishUpgradeTrigger)
+        call EnableTrigger(this.beginTrainingTrigger)
+        call EnableTrigger(this.cancelTrainingTrigger)
+        call EnableTrigger(this.finishTrainingTrigger)
+        call EnableTrigger(this.beginRevivingTrigger)
+        call EnableTrigger(this.cancelRevivingTrigger)
+        call EnableTrigger(this.finishRevivingTrigger)
         call EnableTrigger(this.manaTrigger)
+
         if (IsUnitType(this.whichUnit, UNIT_TYPE_HERO)) then
             call SuspendHeroXPBJ(false, this.whichUnit)
         endif
+
+        call this.updateOrder(GetUnitCurrentOrder(this.whichUnit))
     endmethod
 
     public stub method onTimeInvertsDifferent takes integer time returns nothing
-        call IssueImmediateOrderBJ(this.whichUnit, "stop")
-        call IssueImmediateOrderBJ(this.whichUnit, "halt")
+        call DisableTrigger(this.orderTrigger)
+        call DisableTrigger(this.pickupTrigger)
+        call DisableTrigger(this.dropTrigger)
+        call DisableTrigger(this.pawnTrigger)
+        call DisableTrigger(this.useTrigger)
+        call DisableTrigger(this.deathTrigger)
+        call DisableTrigger(this.damageTrigger)
+        call DisableTrigger(this.attackTrigger)
+        call DisableTrigger(this.levelTrigger)
+        call DisableTrigger(this.skillTrigger)
+        call DisableTrigger(this.acquireTargetTrigger)
+        call DisableTrigger(this.loadTrigger)
+        call DisableTrigger(this.unloadTrigger)
+        call DisableTrigger(this.startConstructionTrigger)
+        call DisableTrigger(this.cancelConstructionTrigger)
+        call DisableTrigger(this.finishConstructionTrigger)
+        call DisableTrigger(this. beginResearchTrigger)
+        call DisableTrigger(this.cancelResearchTrigger)
+        call DisableTrigger(this.finishResearchTrigger)
+        call DisableTrigger(this.beginUpgradeTrigger)
+        call DisableTrigger(this.cancelUpgradeTrigger)
+        call DisableTrigger(this.finishUpgradeTrigger)
+        call DisableTrigger(this.beginTrainingTrigger)
+        call DisableTrigger(this.cancelTrainingTrigger)
+        call DisableTrigger(this.finishTrainingTrigger)
+        call DisableTrigger(this.beginRevivingTrigger)
+        call DisableTrigger(this.cancelRevivingTrigger)
+        call DisableTrigger(this.finishRevivingTrigger)
         call DisableTrigger(this.manaTrigger)
+
         // TODO Disable mana and life regeneration of the unit
 
         if (IsUnitType(this.whichUnit, UNIT_TYPE_HERO)) then
             call SuspendHeroXPBJ(true, this.whichUnit)
         endif
+
+        call IssueImmediateOrderBJ(this.whichUnit, "stop")
+        call IssueImmediateOrderBJ(this.whichUnit, "halt")
+
+        // prevents further interactions
+        call SetUnitInvulnerable(this.whichUnit, true)
     endmethod
 
     public method getUnit takes nothing returns unit
@@ -1964,7 +2031,8 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private method updateOrder takes integer orderId returns nothing
         //call PrintMsg("Order for unit: " + GetUnitName(this.whichUnit) + " with time object " + I2S(this))
-        if (orderId == String2OrderIdBJ("move") or orderId == String2OrderIdBJ("smart")) then
+        // TODO Add return resources, picking up item orders.
+        if (orderId == String2OrderIdBJ("move") or orderId == String2OrderIdBJ("smart") or orderId == String2OrderIdBJ("harvest")) then
             //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
             set this.isMoving = true
             set this.isStanding = false
@@ -1977,10 +2045,12 @@ struct TimeObjectUnit extends TimeObjectImpl
                 endif
             elseif (not this.isRecordingChanges()) then
                 call this.startRecordingChanges(this.getTime().getTime())
+                //call PrintMsg("Unit " + GetUnitName(this.getUnit()) + " starts recording stand")
             endif
             set this.isMoving = false
             set this.isRepairing = false
             set this.isStanding = true
+            //call PrintMsg("Unit " + GetUnitName(this.getUnit()) + " is initially standing")
         elseif (orderId == String2OrderIdBJ("repair")) then
             set this.isRepairing = true
             set this.isStanding = false
@@ -1988,6 +2058,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         else
             set this.isStanding = false // all other orders cancel standing as well
             if (UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
+                //call PrintMsg("Unit " + GetUnitName(this.getUnit()) + " stops recording stand")
                 call this.stopRecordingChanges(this.getTime().getTime())
             endif
         endif
