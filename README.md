@@ -8,12 +8,11 @@ Download: [Tenet.w3x](./Tenet.w3x)
 
 This is a very basic 2 vs 2 map.
 Tenet soldiers fight against Sator's men.
-The Algorithm has to be switched with a fake Algorithm by the Protagonist in time.
-The real one has to be brought to a certain point on the map.
-The Algorithm is protected by Sator's mercenaries.
+The Algorithm must be stolen by Tenet soldiers in time and brought to a certain location on the map.
+Sator's men have to keep the Algorithm at its original location until the time is over.
 
-The turnstile machine allows you to copy the Algorithm and fake Algorithm.
-All real Algorithms should be at the specific locations on the map and at leaast one fake Algorithm must be placed at the original location.
+The turnstile machine allows you to copy the Algorithm.
+All Algorithms should be at the specific locations on the map.
 
 ### The Turnstile Machine
 

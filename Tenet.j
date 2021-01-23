@@ -127,6 +127,28 @@ library MapData
 
     struct UnitTypes
 
+        public static method getStandAnimationIndex takes integer unitTypeId returns integer
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
+                return 0
+            elseif (unitTypeId == 'h00F') then
+                return 0
+            elseif (unitTypeId == 'h00E' or unitTypeId == 'h00G') then
+                return 3
+            endif
+
+            return 0
+        endmethod
+
+        public static method getStandAnimationDuration takes integer unitTypeId returns real
+            if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
+                return 4.0
+            elseif (unitTypeId == 'h00E' or unitTypeId == 'h00F' or unitTypeId == 'h00G') then
+                return 4.0
+            endif
+
+            return 0.0
+        endmethod
+
         public static method getWalkAnimationIndex takes integer unitTypeId returns integer
             if (unitTypeId == 'H000' or unitTypeId == 'z000' or unitTypeId == 'H00B' or unitTypeId == 'H00C' or unitTypeId == 'H00D') then
                 return 5
@@ -228,6 +250,13 @@ library MapData
                 return gg_snd_FootmanDeathInverted
             endif
             return null
+        endmethod
+
+        public static method recordStand takes integer unitTypeId returns boolean
+            if (unitTypeId == 'h00E' or unitTypeId == 'h00F' or unitTypeId == 'h00G') then
+                return true
+            endif
+            return false
         endmethod
 
     endstruct
@@ -1689,6 +1718,7 @@ struct TimeObjectMusic extends TimeObjectImpl
         //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusic + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
         call ClearMapMusic()
         call SetMapMusicRandomBJ(this.whichMusic)
+        // TODO It always starts from the beginning not the offset.
         call PlayMusicExBJ(this.whichMusic, startOffset, 0)
         //call PrintMsg("Start normal music at " + R2S(startOffset))
     endmethod
@@ -1718,6 +1748,7 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
         //call PrintMsg("|cff00ff00Hurray: Restore music " + this.whichMusicInverted + " at offset " + R2S(offset) + " with start offset " + R2S(startOffset) + " and music duration " + R2S(musicDuration) + "|r")
         call ClearMapMusic()
         call SetMapMusicRandomBJ(this.whichMusicInverted)
+        // TODO It always starts from the beginning not the offset.
         call PlayMusicExBJ(this.whichMusicInverted, startOffset, 0)
         //call PrintMsg("Start inverted music at " + R2S(startOffset))
     endmethod
@@ -1737,6 +1768,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private boolean isMoving
     private boolean isRepairing
     private boolean isBeingConstructed
+    private boolean isStanding
     private integer constructionStartTime
     private trigger orderTrigger
     private trigger pickupTrigger
@@ -1790,18 +1822,24 @@ struct TimeObjectUnit extends TimeObjectImpl
             call this.addChangeEvent(time, ChangeEventUnitFacing.create(whichUnit))
             // TODO Add the current animation (detected by the order like "move" or "attack" etc.)
             // TODO Store unit animations for orders based on unit type IDs!
-            // GetUnitCurrentOrder(this.whichUnit) == String2OrderIdBJ("none")
+            // GetUnitCurrentOrder(this.getUnit()) == String2OrderIdBJ("none")
             // walk animation
-            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getWalkAnimationIndex(GetUnitTypeId(this.whichUnit)), UnitTypes.getWalkAnimationDuration(GetUnitTypeId(this.whichUnit))))
+            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getWalkAnimationIndex(GetUnitTypeId(this.getUnit())), UnitTypes.getWalkAnimationDuration(GetUnitTypeId(this.getUnit()))))
         endif
 
         if (isRepairing) then
-            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getRepairAnimationIndex(GetUnitTypeId(this.whichUnit)), UnitTypes.getRepairAnimationDuration(GetUnitTypeId(this.whichUnit))))
+            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getRepairAnimationIndex(GetUnitTypeId(this.getUnit())), UnitTypes.getRepairAnimationDuration(GetUnitTypeId(this.getUnit()))))
         endif
 
         if (isBeingConstructed) then
             //call PrintMsg("Add construction change event " + GetUnitName(this.getUnit()))
             call this.addChangeEvent(time, ChangeEventUnitConstructionProgress.create(whichUnit, constructionStartTime))
+        endif
+
+        // Some stand animations are quite visible and need to be played backwards. Others are not that important.
+        if (isStanding and UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
+            call PrintMsg("Record stand animation for unit " + GetUnitName(this.getUnit()))
+            call this.addChangeEvent(time, ChangeEventUnitAnimation.create(this, UnitTypes.getStandAnimationIndex(GetUnitTypeId(this.getUnit())), UnitTypes.getStandAnimationDuration(GetUnitTypeId(this.getUnit()))))
         endif
     endmethod
 
@@ -1924,22 +1962,40 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.addChangeEventPositionsOverTime(startTime, endTime, GetRectCenterX(startRect), GetRectCenterY(startRect), startFacing, GetRectCenterX(endRect), GetRectCenterY(endRect), endFacing, clockwiseFacing)
     endmethod
 
-    private static method triggerFunctionOrder takes nothing returns nothing
-        local thistype this = LoadData(GetTriggeringTrigger())
+    private method updateOrder takes integer orderId returns nothing
         //call PrintMsg("Order for unit: " + GetUnitName(this.whichUnit) + " with time object " + I2S(this))
-        if (GetIssuedOrderId() == String2OrderIdBJ("move") or GetIssuedOrderId() == String2OrderIdBJ("smart")) then
+        if (orderId == String2OrderIdBJ("move") or orderId == String2OrderIdBJ("smart")) then
             //call PrintMsg("Move order for unit: " + GetUnitName(this.whichUnit))
             set this.isMoving = true
+            set this.isStanding = false
             call this.startRecordingChanges(this.getTime().getTime())
-        elseif (GetIssuedOrderId() == String2OrderIdBJ("stop") or GetIssuedOrderId() == String2OrderIdBJ("halt") or GetIssuedOrderId() == String2OrderIdBJ("holdposition")) then
+        elseif (orderId == String2OrderIdBJ("stop") or orderId == String2OrderIdBJ("halt") or orderId == String2OrderIdBJ("holdposition") or orderId == 0) then
             //call PrintMsg("Stop order for unit: " + GetUnitName(this.whichUnit))
-            call this.stopRecordingChanges(this.getTime().getTime())
+            if (not UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
+                if (this.isRecordingChanges()) then
+                    call this.stopRecordingChanges(this.getTime().getTime())
+                endif
+            elseif (not this.isRecordingChanges()) then
+                call this.startRecordingChanges(this.getTime().getTime())
+            endif
             set this.isMoving = false
             set this.isRepairing = false
-        elseif (GetIssuedOrderId() == String2OrderIdBJ("repair")) then
+            set this.isStanding = true
+        elseif (orderId == String2OrderIdBJ("repair")) then
             set this.isRepairing = true
+            set this.isStanding = false
             call this.startRecordingChanges(this.getTime().getTime())
+        else
+            set this.isStanding = false // all other orders cancel standing as well
+            if (UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
+                call this.stopRecordingChanges(this.getTime().getTime())
+            endif
         endif
+    endmethod
+
+    private static method triggerFunctionOrder takes nothing returns nothing
+        local thistype this = LoadData(GetTriggeringTrigger())
+        call this.updateOrder(GetIssuedOrderId())
     endmethod
 
     private static method triggerFunctionPickupItem takes nothing returns nothing
@@ -2215,6 +2271,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.isMoving = false
         set this.isRepairing = false
         set this.isBeingConstructed = false
+        set this.isStanding = false
 
         if (inverted) then
             call BlzSetUnitName(whichUnit, GetUnitName(whichUnit) + " Inverted")
@@ -2224,6 +2281,8 @@ struct TimeObjectUnit extends TimeObjectImpl
         call this.createTriggers()
 
         call SaveData(this.whichUnit, this)
+
+        call this.updateOrder(GetUnitCurrentOrder(this.whichUnit))
 
         return this
     endmethod
