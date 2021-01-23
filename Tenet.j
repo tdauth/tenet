@@ -559,6 +559,9 @@ interface Time
     public method pause takes nothing returns nothing
     public method resume takes nothing returns nothing
 
+    public method pauseObjects takes nothing returns nothing
+    public method resumeObjects takes nothing returns nothing
+
     /**
      * After calling this method, the time of day will be stored and inverted as well when the global time is inverted.
      */
@@ -2744,6 +2747,10 @@ struct TimeImpl extends Time
         return this.inverted
     endmethod
 
+    private static method timeObjectDoesAlreadyExist takes integer time, TimeObject timeObject returns boolean
+        return (timeObject.isInverted() and time <= timeObject.getStartTime()) or (not timeObject.isInverted() and time >= timeObject.getStartTime())
+    endmethod
+
     public stub method setInverted takes boolean inverted returns nothing
         local integer i = 0
         local TimeObject timeObject = 0
@@ -2756,7 +2763,7 @@ struct TimeImpl extends Time
             exitwhen (i == this.getObjectsSize())
             set timeObject = this.timeObjects[i]
             set sameDirection = timeObject.isInverted() == this.isInverted()
-            set doesAlreadyExist = (timeObject.isInverted() and this.getTime() <= timeObject.getStartTime()) or (not timeObject.isInverted() and this.getTime() >= timeObject.getStartTime())
+            set doesAlreadyExist = timeObjectDoesAlreadyExist(this.getTime(), timeObject)
             // flush all changes from now
             if (sameDirection) then
                 call timeObject.getTimeLine().flushAllFrom(time)
@@ -2831,6 +2838,38 @@ struct TimeImpl extends Time
     public stub method resume takes nothing returns nothing
         call TimerStart(this.whichTimer, TIMER_PERIODIC_INTERVAL, true, function thistype.timerFunction)
         //call ResumeTimer(this.whichTimer)
+    endmethod
+
+    public stub method pauseObjects takes nothing returns nothing
+        local boolean doesAlreadyExist = false
+        local TimeObject timeObject = 0
+        local integer i = 0
+        loop
+            exitwhen (i == this.timeObjectsSize)
+            set doesAlreadyExist = timeObjectDoesAlreadyExist(this.getTime(), timeObject)
+            if (this.isInverted() == timeObject.isInverted() and doesAlreadyExist) then
+                call timeObject.onTimeInvertsDifferent(this.getTime())
+                call timeObject.stopRecordingChanges(this.getTime())
+            endif
+            set i = i + 1
+        endloop
+    endmethod
+
+    public stub method resumeObjects takes nothing returns nothing
+        local boolean doesAlreadyExist = false
+        local TimeObject timeObject = 0
+        local integer i = 0
+        loop
+            exitwhen (i == this.timeObjectsSize)
+            set doesAlreadyExist = timeObjectDoesAlreadyExist(this.getTime(), timeObject)
+            if (this.isInverted() == timeObject.isInverted()) then
+                call timeObject.getTimeLine().flushAllFrom(this.getTime())
+                if (doesAlreadyExist) then
+                    call timeObject.onTimeInvertsSame(this.getTime())
+                endif
+            endif
+            set i = i + 1
+        endloop
     endmethod
 
     public stub method addTimeOfDay takes nothing returns TimeObject
@@ -3073,13 +3112,15 @@ struct TimeImpl extends Time
         local integer toTime = this.getTime() + offset
         local integer i = this.getTime()
         local real delayPerTick = delay / RAbsBJ(this.getTime() - offset)
+        local boolean initialTimeInverted = this.isInverted()
 
-        if ((isNegative and this.isInverted()) or (not isNegative and not this.isInverted())) then
+        if ((isNegative and initialTimeInverted) or (not isNegative and not initialTimeInverted)) then
             call PrintMsg("Invalid call of toTimeDelayed with offset " + R2S(offset) + ". You can only call it with a negative value if the time is not inverted or with a positive value if the time is inverted!")
         endif
 
         // TODO Pause all units etc.
         call this.pause()
+        call this.pauseObjects()
         loop
             if (isNegative) then
                 exitwhen (this.getTime() <= toTime)
@@ -3088,12 +3129,15 @@ struct TimeImpl extends Time
                 exitwhen (this.getTime() >= toTime)
                 set i = i + 1
             endif
+            // stop if the time is inverted during this effect
+            exitwhen (this.isInverted() != initialTimeInverted)
             call this.setTimeRestoringOnly(i)
             call PolledWait(delayPerTick)
             //call PrintMsg("After tick")
         endloop
-        call PrintMsg("Resume time!")
+        //call PrintMsg("Resume time!")
         // TODO Unpause all units etc.
+        call this.resumeObjects()
         call this.resume()
     endmethod
 
@@ -5064,14 +5108,17 @@ private function SetHeroAbilityLevelEx takes unit hero, integer abilityId, integ
 endfunction
 
 // TODO Not only guard calls but queue them?
-function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level returns nothing
+function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level returns boolean
     if (not HaveSavedBoolean(whichHashTable, GetHandleId(hero), 0) or LoadBoolean(whichHashTable, GetHandleId(hero), 0)) then
         if (not SupportsHeroTypeForAbilityLevel(GetUnitTypeId(hero))) then
             call PrintMsg("Warning: Unit type ID " + GetObjectName(GetUnitTypeId(hero)) + " is not supported for changing the hero ability level.")
         endif
         call SaveBoolean(whichHashTable, GetHandleId(hero), 0, false)
         call SetHeroAbilityLevelEx(hero, abilityId, level)
+        return true
     endif
+
+    return false
 endfunction
 
 endlibrary
