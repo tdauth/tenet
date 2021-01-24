@@ -1,4 +1,4 @@
-// Exported on Sun Jan 24 00:33:02 2021 by barad
+// Exported on Sun Jan 24 01:28:04 2021 by barad
 Version {
 	FormatVersion 800,
 }
@@ -11,28 +11,48 @@ Model "TurnstileMachine" {
 	MaximumExtent {156.78636, 244.574722, 354.23172},
 	BoundsRadius 312.382615,
 }
-Sequences 4 {
+Sequences 7 {
 	Anim "Stand" {
 		Interval {33, 1966},
 		MinimumExtent {-149.56618, -168.94626, 0},
 		MaximumExtent {156.78636, 244.574722, 354.23172},
 		BoundsRadius 312.382615,
 	}
-	Anim "Spell" {
+	Anim "Rotate Right" {
 		Interval {2000, 3966},
 		NonLooping,
 		MinimumExtent {-149.56618, -168.94626, 0},
 		MaximumExtent {156.78636, 244.574722, 354.23172},
 		BoundsRadius 312.382615,
 	}
-	Anim "Stand Alternate" {
+	Anim "Stand Rotate Right" {
 		Interval {4000, 6300},
 		MinimumExtent {-149.56618, -168.94626, 0},
 		MaximumExtent {156.78636, 244.574722, 354.23172},
 		BoundsRadius 312.382615,
 	}
-	Anim "Spell 2" {
+	Anim "Rotate Right Back" {
 		Interval {6333, 8300},
+		NonLooping,
+		MinimumExtent {-149.56618, -168.94626, 0},
+		MaximumExtent {156.78636, 244.574722, 354.23172},
+		BoundsRadius 312.382615,
+	}
+	Anim "Rotate Left" {
+		Interval {8333, 10300},
+		NonLooping,
+		MinimumExtent {-149.56618, -168.94626, 0},
+		MaximumExtent {156.78636, 244.574722, 354.23172},
+		BoundsRadius 312.382615,
+	}
+	Anim "Stand Rotate Left" {
+		Interval {10333, 12966},
+		MinimumExtent {-149.56618, -168.94626, 0},
+		MaximumExtent {156.78636, 244.574722, 354.23172},
+		BoundsRadius 312.382615,
+	}
+	Anim "Rotate Left Back" {
+		Interval {13000, 14966},
 		NonLooping,
 		MinimumExtent {-149.56618, -168.94626, 0},
 		MaximumExtent {156.78636, 244.574722, 354.23172},
@@ -1027,13 +1047,28 @@ Geoset {
 		MaximumExtent {156.78636, 137.40628, 228.22437},
 		BoundsRadius 239.816898,
 	}
+	Anim {
+		MinimumExtent {-149.56618, -168.94626, 22.4458},
+		MaximumExtent {156.78636, 137.40628, 228.22437},
+		BoundsRadius 239.816898,
+	}
+	Anim {
+		MinimumExtent {-149.56618, -168.94626, 22.4458},
+		MaximumExtent {156.78636, 137.40628, 228.22437},
+		BoundsRadius 239.816898,
+	}
+	Anim {
+		MinimumExtent {-149.56618, -168.94626, 22.4458},
+		MaximumExtent {156.78636, 137.40628, 228.22437},
+		BoundsRadius 239.816898,
+	}
 	MaterialID 0,
 }
 Bone "Bone_Cylinder" {
 	ObjectId 0,
 	GeosetId 0,
 	GeosetAnimId None,
-	Rotation 8 {
+	Rotation 14 {
 		Linear,
 		33: { -0, 0, 0, 1 },
 		1966: { -0, 0, 0, 1 },
@@ -1043,6 +1078,12 @@ Bone "Bone_Cylinder" {
 		6300: { 0, 0, 0.70711, 0.70711 },
 		6333: { 0, 0, 0.70665, 0.70756 },
 		8300: { -0, 0, 0, 1 },
+		8333: { -0, 0, 0, 1 },
+		10300: { 0, 0, -0.70711, 0.70711 },
+		10333: { 0, 0, -0.70711, 0.70711 },
+		12966: { 0, 0, -0.70711, 0.70711 },
+		13000: { 0, 0, -0.70711, 0.70711 },
+		14966: { -0, 0, 0, 1 },
 	}
 }
 Light "Light" {
