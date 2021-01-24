@@ -30,6 +30,9 @@ library MapEvents initializer Init requires Tenet
                 set i = i + 1
             endloop
             call SetUnitOwner(circleOfPower, ownerBefore, true)
+            // TODO Play Rotation animations backwards!
+            call SetUnitOwner(udg_BlueEntry, ownerBefore, false)
+            call SetUnitOwner(udg_RedEntry, ownerBefore, false)
             call PlaySoundBJ(invertedConquerSound)
         endmethod
 
