@@ -1,58 +1,57 @@
-// Exported on Sun Jan 24 13:50:38 2021 by barad
+// Exported on Sun Jan 24 15:06:34 2021 by barad
 Version {
 	FormatVersion 800,
 }
 Model "TurnstileMachine" {
 	NumGeosets 2,
 	NumBones 1,
-	NumLights 1,
 	BlendTime 150,
 	MinimumExtent {-160.11996, -177.07024, 0},
-	MaximumExtent {166.88815, 244.574722, 354.23172},
-	BoundsRadius 320.233856,
+	MaximumExtent {166.88815, 137.40628, 210.64153},
+	BoundsRadius 250.0998,
 }
 Sequences 7 {
 	Anim "Stand" {
 		Interval {33, 1966},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 	Anim "Spell First" {
 		Interval {2000, 3966},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 	Anim "Stand Alternate First" {
 		Interval {4000, 6300},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 	Anim "Spell Second" {
 		Interval {6333, 8300},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 	Anim "Spell Third" {
 		Interval {8333, 10300},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 	Anim "Stand Alternate Second" {
 		Interval {10333, 12966},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 	Anim "Spell Fourth" {
 		Interval {13000, 14966},
 		MinimumExtent {-160.11996, -177.07024, 0},
-		MaximumExtent {166.88815, 244.574722, 354.23172},
-		BoundsRadius 320.233856,
+		MaximumExtent {166.88815, 137.40628, 210.64153},
+		BoundsRadius 250.0998,
 	}
 }
 Textures 2 {
@@ -23818,7 +23817,6 @@ Geoset {
 	MaterialID 1,
 }
 Bone "Bone_Cylinder" {
-	ObjectId 0,
 	GeosetId -1,
 	GeosetAnimId None,
 	Rotation 14 {
@@ -23839,19 +23837,8 @@ Bone "Bone_Cylinder" {
 		14966: { -0, 0, 0, 1 },
 	}
 }
-Light "Light" {
-	ObjectId 1,
-	Omnidirectional,
-	static AttenuationStart 80,
-	static AttenuationEnd 200,
-	static Color {1, 1, 1},
-	static Intensity 10,
-	static AmbIntensity 0,
-	static AmbColor {1, 1, 1},
-}
-PivotPoints 2 {
+PivotPoints 1 {
 	{0, 0, 0},
-	{-60.327236, 244.574722, 354.23172},
 }
 Camera "Camera" {
 	Position {415.547455, 441.533478, 297.498535},
