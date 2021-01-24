@@ -1,4 +1,4 @@
-// Exported on Sun Jan 24 01:28:04 2021 by barad
+// Exported on Sun Jan 24 01:37:49 2021 by barad
 Version {
 	FormatVersion 800,
 }
@@ -25,7 +25,7 @@ Sequences 7 {
 		MaximumExtent {156.78636, 244.574722, 354.23172},
 		BoundsRadius 312.382615,
 	}
-	Anim "Stand Rotate Right" {
+	Anim "Stand Alternate Rotate Right" {
 		Interval {4000, 6300},
 		MinimumExtent {-149.56618, -168.94626, 0},
 		MaximumExtent {156.78636, 244.574722, 354.23172},
@@ -45,7 +45,7 @@ Sequences 7 {
 		MaximumExtent {156.78636, 244.574722, 354.23172},
 		BoundsRadius 312.382615,
 	}
-	Anim "Stand Rotate Left" {
+	Anim "Stand Alternate Rotate Left" {
 		Interval {10333, 12966},
 		MinimumExtent {-149.56618, -168.94626, 0},
 		MaximumExtent {156.78636, 244.574722, 354.23172},
