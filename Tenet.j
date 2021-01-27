@@ -1054,6 +1054,8 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     public stub method restore takes nothing returns nothing
         //call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
+        //call PrintMsg("Owner of transporter: " + GetPlayerName(GetOwningPlayer(transporter)))
+        //call PrintMsg("Owner of unloaded unit: " + GetPlayerName(GetOwningPlayer(this.getUnit())))
     endmethod
 
     public static method create takes unit loadedUnit, unit transporter returns thistype
@@ -1401,6 +1403,10 @@ struct TimeFrameImpl extends TimeFrame
     endmethod
 
     public stub method flush takes nothing returns nothing
+        if (this.changeEventsHead == 0) then
+            return
+        endif
+
         loop
             exitwhen (this.getChangeEventsSize() == 1)
             call this.changeEventsHead.popBack().destroy()
