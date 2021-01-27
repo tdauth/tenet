@@ -2947,6 +2947,13 @@ struct TimeImpl extends Time
         return result
     endmethod
 
+    private static method SelectGroupAddForPlayerBJ takes group g, player whichPlayer returns nothing
+        if (GetLocalPlayer() == whichPlayer) then
+            // Use only local code (no net traffic) within this block to avoid desyncs.
+            call ForGroup(g, function SelectGroupBJEnum)
+        endif
+    endmethod
+
     public stub method addUnitCopy takes boolean inverted, player owner, unit whichUnit, real x, real y, real facing returns group
         local group copy = CopyUnit(owner, whichUnit, x, y, facing)
         local group result = CreateGroup()
@@ -2954,8 +2961,8 @@ struct TimeImpl extends Time
         local integer i = 0
         loop
             exitwhen (i == GetPlayers())
-            if (GetPlayerAlliance(Player(i), owner, ALLIANCE_SHARED_ADVANCED_CONTROL) or Player(i) == owner) then
-                call SelectGroupForPlayerBJ(copy, Player(i))
+            if (GetPlayerAlliance(owner, Player(i), ALLIANCE_SHARED_ADVANCED_CONTROL) or Player(i) == owner) then
+                call SelectGroupAddForPlayerBJ(copy, Player(i))
             endif
             set i = i + 1
         endloop
@@ -4422,6 +4429,14 @@ library Transports initializer Init
     //*
     //*     unit - the unloading transport unit;
     //*
+    //* function UnloadAll takes:
+    //*
+    //*     unit transporter - The transporting unit;
+    //*
+    //* returns:
+    //*
+    //*     nothing;
+    //*
     //* function TriggerRegisterUnitUnloadedEvent takes:
     //*
     //*     trigger whichTrigger - the trigger the event is registered for;
@@ -4518,6 +4533,18 @@ library Transports initializer Init
 
     function GetUnloadingTransportUnit takes nothing returns unit
         return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), 1)
+    endfunction
+
+    private function ForFunctionUnload takes nothing returns nothing
+        call IssueTargetOrderBJ(GetUnitTransport(GetEnumUnit()), "unload", GetEnumUnit())
+    endfunction
+
+    function UnloadAll takes unit transporter returns nothing
+        local group whichGroup = GetTransportedUnits(transporter)
+        call ForGroup(whichGroup, function ForFunctionUnload)
+        call GroupClear(whichGroup)
+        call DestroyGroup(whichGroup)
+        set whichGroup = null
     endfunction
 
     private function TriggerConditionUnload takes nothing returns boolean
