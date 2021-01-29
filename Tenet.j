@@ -397,7 +397,7 @@ library Tenet initializer Init requires MapData, TenetUtility, LinkedList, Rever
 
 globals
     private ReverseStringFunctionInterface reverseStringFunction = 0
-    constant real TIMER_PERIODIC_INTERVAL = 0.10
+    constant real TIMER_PERIODIC_INTERVAL = 0.40
     constant string INVERSION_EFFECT_PATH = "Abilities\\Spells\\Other\\Silence\\SilenceTarget.mdx"
 endglobals
 
@@ -453,6 +453,15 @@ function ReverseStringExceptColorCodes takes string whichString returns string
         set i = i - 1
     endloop
     return result
+endfunction
+
+/**
+ * Converts ingame duration into time ticks for the time clock.
+ * \param duration Ingame duration in seconds.
+ * \return Time ticks.
+ */
+function DurationToTime takes real duration returns integer
+    return R2I(duration / TIMER_PERIODIC_INTERVAL)
 endfunction
 
 interface ChangeEvent
