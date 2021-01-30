@@ -397,7 +397,7 @@ library Tenet initializer Init requires MapData, TenetUtility, LinkedList, Rever
 
 globals
     private ReverseStringFunctionInterface reverseStringFunction = 0
-    constant real TIMER_PERIODIC_INTERVAL = 0.40
+    constant real TIMER_PERIODIC_INTERVAL = 0.10
     constant string INVERSION_EFFECT_PATH = "Abilities\\Spells\\Other\\Silence\\SilenceTarget.mdx"
 endglobals
 
@@ -1061,10 +1061,9 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
-        //call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call TimeObjectUnit.fromUnit(transporter).setRestoredOrderId(String2OrderIdBJ("unload"))
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
-        //call PrintMsg("Owner of transporter: " + GetPlayerName(GetOwningPlayer(transporter)))
-        //call PrintMsg("Owner of unloaded unit: " + GetPlayerName(GetOwningPlayer(this.getUnit())))
     endmethod
 
     public static method create takes unit loadedUnit, unit transporter returns thistype
@@ -1079,7 +1078,8 @@ struct ChangeEventUnitUnloaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
-        //call PrintMsg("|cff00ff00Hurray: Restore unloaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Restore unloaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call TimeObjectUnit.fromUnit(transporter).setRestoredOrderId(String2OrderIdBJ("load"))
         call IssueTargetOrderBJ(transporter, "load", this.getUnit())
     endmethod
 
@@ -1791,6 +1791,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private boolean isRepairing
     private boolean isBeingConstructed
     private boolean isStanding
+    private integer restoredOrderId = 0
     private integer constructionStartTime
     private trigger orderTrigger
     private trigger pickupTrigger
@@ -1824,6 +1825,22 @@ struct TimeObjectUnit extends TimeObjectImpl
     // TODO Add all trained units as objects to the map.
     private trigger finishRevivingTrigger
     private trigger manaTrigger
+
+    public method clearRestoredOrder takes nothing returns nothing
+        set this.restoredOrderId = 0
+    endmethod
+
+    public method isOrderRestored takes nothing returns boolean
+        return this.restoredOrderId != 0
+    endmethod
+
+    public method getRestoredOrderId takes nothing returns integer
+        return this.restoredOrderId
+    endmethod
+
+    public method setRestoredOrderId takes integer orderId returns nothing
+        set this.restoredOrderId = orderId
+    endmethod
 
     public stub method getName takes nothing returns string
         return GetUnitName(whichUnit) + super.getName()
@@ -1866,8 +1883,10 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method onRestore takes integer time returns nothing
-        call IssueImmediateOrderBJ(this.whichUnit, "stop")
-        call IssueImmediateOrderBJ(this.whichUnit, "halt")
+        if (not this.isOrderRestored() or GetIssuedOrderId() != this.getRestoredOrderId()) then
+            call IssueImmediateOrderBJ(this.whichUnit, "stop")
+            call IssueImmediateOrderBJ(this.whichUnit, "halt")
+        endif
     endmethod
 
     public stub method onTimeInvertsSame takes integer time returns nothing
@@ -1876,7 +1895,10 @@ struct TimeObjectUnit extends TimeObjectImpl
             call SetUnitInvulnerable(this.whichUnit, false)
         endif
 
-        call EnableTrigger(this.orderTrigger)
+        // is not restored anymore
+        call this.clearRestoredOrder()
+
+        //call EnableTrigger(this.orderTrigger)
         call EnableTrigger(this.pickupTrigger)
         call EnableTrigger(this.dropTrigger)
         call EnableTrigger(this.pawnTrigger)
@@ -1914,7 +1936,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method onTimeInvertsDifferent takes integer time returns nothing
-        call DisableTrigger(this.orderTrigger)
+        //call DisableTrigger(this.orderTrigger)
         call DisableTrigger(this.pickupTrigger)
         call DisableTrigger(this.dropTrigger)
         call DisableTrigger(this.pawnTrigger)
@@ -2097,7 +2119,16 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionOrder takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call this.updateOrder(GetIssuedOrderId())
+        // in control
+        if (this.isInverted() == this.getTime().isInverted()) then
+            call this.updateOrder(GetIssuedOrderId())
+        // restored
+        else
+            // if not the expected order is restored or the unit stops anyway, we have to clear it to not allow any further orders
+            if (not this.isOrderRestored() or GetIssuedOrderId() != this.getRestoredOrderId()) then
+                call this.clearRestoredOrder()
+            endif
+        endif
     endmethod
 
     private static method triggerFunctionPickupItem takes nothing returns nothing
@@ -2184,7 +2215,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionLoad takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        //call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
         call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
     endmethod
 
@@ -2196,7 +2227,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionUnload takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        //call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
         call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
