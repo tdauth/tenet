@@ -1786,6 +1786,7 @@ endstruct
 struct TimeObjectUnit extends TimeObjectImpl
     private unit whichUnit
     private player originalOwner
+    private boolean wasInvulnerableBeforeTimeInvert
     private boolean isMoving
     private boolean isRepairing
     private boolean isBeingConstructed
@@ -1870,8 +1871,10 @@ struct TimeObjectUnit extends TimeObjectImpl
     endmethod
 
     public stub method onTimeInvertsSame takes integer time returns nothing
-        // prevents further interactions
-        call SetUnitInvulnerable(this.whichUnit, false)
+        if (not this.wasInvulnerableBeforeTimeInvert) then
+            // allows further interactions
+            call SetUnitInvulnerable(this.whichUnit, false)
+        endif
 
         call EnableTrigger(this.orderTrigger)
         call EnableTrigger(this.pickupTrigger)
@@ -1950,8 +1953,11 @@ struct TimeObjectUnit extends TimeObjectImpl
         call IssueImmediateOrderBJ(this.whichUnit, "stop")
         call IssueImmediateOrderBJ(this.whichUnit, "halt")
 
-        // prevents further interactions
-        call SetUnitInvulnerable(this.whichUnit, true)
+        set this.wasInvulnerableBeforeTimeInvert = BlzIsUnitInvulnerable(this.whichUnit)
+        if (not this.wasInvulnerableBeforeTimeInvert) then
+            // prevents further interactions
+            call SetUnitInvulnerable(this.whichUnit, true)
+        endif
     endmethod
 
     public method getUnit takes nothing returns unit
@@ -1989,7 +1995,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         local integer i = startTime
         local integer endValue = endTime
 
-        if (not clockwiseFacing) then
+        if (clockwiseFacing) then
             set facingDistance = RAbsBJ(endFacing - 360.0 - startFacing)
         endif
 
@@ -2044,6 +2050,10 @@ struct TimeObjectUnit extends TimeObjectImpl
             set i = i + 1
         endloop
         //call PrintMsg("Done adding change events over time!")
+    endmethod
+
+    public method addChangeEventPositionsOverTimeLocations takes integer startTime, integer endTime, location startLocation, real startFacing, location endLocation, real endFacing, boolean clockwiseFacing returns nothing
+        call this.addChangeEventPositionsOverTime(startTime, endTime, GetLocationX(startLocation), GetLocationY(startLocation), startFacing, GetLocationX(endLocation), GetLocationY(endLocation), endFacing, clockwiseFacing)
     endmethod
 
     public method addChangeEventPositionsOverTimeRects takes integer startTime, integer endTime, rect startRect, real startFacing, rect endRect, real endFacing, boolean clockwiseFacing returns nothing
@@ -2714,7 +2724,7 @@ struct TimeImpl extends Time
     private timer whichTimer
 
     public stub method setTimeBySeconds takes real seconds returns nothing
-        call this.setTime(R2I(seconds / TIMER_PERIODIC_INTERVAL))
+        call this.setTime(DurationToTime(seconds))
     endmethod
 
     public stub method setTime takes integer time returns nothing

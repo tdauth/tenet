@@ -1,0 +1,145 @@
+globals
+    constant integer TENET_PIONEER            = 'h005'
+    constant integer TENET_FACTORY            = 'h001'
+    constant integer TENET_BARRACKS           = 'h00K'
+    constant integer TENET_CONTAINER          = 'h004'
+    constant integer SATOR_MERCENARY          = 'z002'
+    constant integer HERO_VOLKOV              = 'H00D'
+endglobals
+
+function InitHero takes nothing returns nothing
+endfunction
+
+function ConfigureAI takes nothing returns nothing
+    call SetTargetHeroes( true )
+    call SetUnitsFlee( true )
+    call SetHeroesFlee( true )
+    call SetPeonsRepair( true )
+    call SetHeroesBuyItems( true )
+    call SetHeroesTakeItems( true )
+    call SetSlowChopping( false )
+endfunction
+
+function BuildingStrategy takes nothing returns nothing
+    // **********************************
+    // *      Building Strategy         *
+    // **********************************
+    // Tier 1 Buildings
+    call SetReplacements( 1, 2, 3 )
+    call SetBuildUnit( 1, CONTAINER )
+    call SetBuildUnit( 6, TENET_PIONEER )
+    call SetBuildUnit( 2, TENET_BARRACKS )
+    call SetBuildUnit( 3, TENET_FACTORY )
+    call CampaignDefenderEx( 2, 2, 3, SATOR_MERCENARY )
+    // **********************************
+    // *    End Building Strategy       *
+    // **********************************
+endfunction
+
+//===========================================================================
+// Basic attack functionality
+//===========================================================================
+function AttackTarget takes unit target, boolean addAlliance returns nothing
+    if (target == null) then
+        return
+    endif
+    if (addAlliance) then
+        call SetAllianceTarget( target )
+    endif
+    call FormGroup( 3, true )
+    call AttackMoveKillA( target )
+    if (not addAlliance) then
+        call SetAllianceTarget( null )
+    endif
+endfunction
+
+//===========================================================================
+// Initiates an attack based on target priorities
+//===========================================================================
+function LaunchAttack takes nothing returns nothing
+    local unit target = null
+    local boolean setAlly = true
+
+    // Don't launch any attack while town is threatened
+    if (TownThreatened()) then
+        call Sleep( 2 )
+        return
+    endif
+
+    // Target Priority #1
+    if (target == null) then
+        set target = GetAllianceTarget()
+        if (target != null) then
+            set setAlly = false
+        endif
+    endif
+
+    // Target Priority #2
+    if (target == null) then
+        set target = GetExpansionFoe()
+        if (target != null) then
+            set take_exp = false
+        endif
+    endif
+
+    // Target Priority #3
+    if (target == null) then
+        set target = GetMegaTarget()
+    endif
+
+    // Target Priority #4
+    if (target == null) then
+        set target = GetEnemyExpansion()
+    endif
+
+    // Target Priority #5
+    if (target == null) then
+        set target = GetEnemyExpansion()
+        if (target == null) then
+            call StartGetEnemyBase(  )
+            loop
+                exitwhen (not WaitGetEnemyBase())
+                call SuicideSleep( 1 )
+            endloop
+            set target = GetEnemyBase()
+        endif
+    endif
+
+    // Target Priority #6
+    if (target == null) then
+        set target = GetCreepCamp( 0, 9, false )
+    endif
+
+    // Target Priority #7
+    if (target == null) then
+        set target = GetCreepCamp( 10, 100, true )
+    endif
+
+    // Attack the target and increment attack wave
+    if (target != null) then
+        call AttackTarget( target, setAlly )
+    else
+        // If no target was found, sleep a bit before trying again
+        call Sleep( 20 )
+    endif
+endfunction
+
+function AttackWaves takes nothing returns nothing
+    loop //Init the infinite attack loop
+        call InitAssaultGroup()
+        call CampaignAttackerEx( 2, 3, 3, SATOR_MERCENARY )
+        call CampaignAttackerEx( 1, 1, 1, HERO_VOLKOV )
+        call Sleep( M3 ) // Waits 3 minutes before attacking
+        call LaunchAttack()
+    endloop
+endfunction
+
+function main takes nothing returns nothing
+    call CampaignAI( TENET_FACTORY, function ChooseHeroSkill )
+    call ConfigureAI( )
+    call InitHero( )
+
+    call BuildingStrategy( )
+
+    call AttackWaves( )
+endfunction
