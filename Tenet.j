@@ -4487,6 +4487,16 @@ library Transports initializer Init
     //*
     //*     nothing;
     //*
+    //* function LoadAll takes:
+    //*
+    //*     unit transporter - The transporting unit;
+    //*
+    //*     group whichGroup - The loaded units;
+    //*
+    //* returns:
+    //*
+    //*     nothing;
+    //*
     //* function TriggerRegisterUnitUnloadedEvent takes:
     //*
     //*     trigger whichTrigger - the trigger the event is registered for;
@@ -4595,6 +4605,40 @@ library Transports initializer Init
         call GroupClear(whichGroup)
         call DestroyGroup(whichGroup)
         set whichGroup = null
+    endfunction
+
+    function TriggerActionLoadAllSeparate takes nothing returns nothing
+        local unit transporter = LoadUnitHandle(whichHashTable, GetHandleId(GetTriggeringTrigger()), 0)
+        local group whichGroup = LoadGroupHandle(whichHashTable, GetHandleId(GetTriggeringTrigger()), 1)
+        local real pollTimeOut = LoadReal(whichHashTable, GetHandleId(GetTriggeringTrigger()), 2)
+        local boolean cancel = false
+        local unit first = null
+        loop
+            set first = FirstOfGroup(whichGroup)
+            exitwhen (first == null or cancel)
+            call IssueTargetOrderBJ(transporter, "load", first)
+            call GroupRemoveUnit(whichGroup, first)
+            loop
+                exitwhen (cancel or GetUnitTransport(first) == transporter or IsUnitDeadBJ(first))
+                set cancel = IsUnitDeadBJ(transporter)
+                call TriggerSleepAction(pollTimeOut)
+            endloop
+        endloop
+        call GroupClear(whichGroup)
+        call DestroyGroup(whichGroup)
+        set whichGroup = null
+        call DisableTrigger(GetTriggeringTrigger())
+        call FlushChildHashtable(whichHashTable, GetHandleId(GetTriggeringTrigger()))
+        call DestroyTrigger(GetTriggeringTrigger())
+    endfunction
+
+    function LoadAll takes unit transporter, group whichGroup, real pollTimeOut returns nothing
+        local trigger whichTrigger = CreateTrigger()
+        call TriggerAddAction(whichTrigger, function TriggerActionLoadAllSeparate)
+        call SaveUnitHandle(whichHashTable, GetHandleId(whichTrigger), 0, transporter)
+        call SaveGroupHandle(whichHashTable, GetHandleId(whichTrigger), 1, CopyGroup(whichGroup))
+        call SaveReal(whichHashTable, GetHandleId(whichTrigger), 2, pollTimeOut)
+        call TriggerExecute(whichTrigger)
     endfunction
 
     private function TriggerConditionUnload takes nothing returns boolean
