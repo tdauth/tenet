@@ -1061,7 +1061,8 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("|cff00ff00Hurray: Restore loaded event with tranport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        call PrintMsg("Restore loaded event!")
+        call PrintMsg("|cff00ff00Hurray: Restore loaded event with transport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call TimeObjectUnit.fromUnit(transporter).setRestoredOrderId(String2OrderIdBJ("unload"))
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
     endmethod
@@ -2216,12 +2217,13 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionLoad takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
+        call PrintMsg("At time " + I2S(this.getTime().getTime()))
         call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitLoaded.create(GetLoadedUnit(), GetTransportUnit()))
     endmethod
 
     private static method triggerConditionUnload takes nothing returns boolean
         local thistype this = LoadData(GetTriggeringTrigger())
-        //call PrintMsg("|cff00ff00Hurray: Unload event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and unloaded unit " + GetUnitName(GetUnloadedUnit()) + " with handle ID " + I2S(GetHandleId(GetUnloadedUnit())) + " and handle ID of the time object unit " + I2S(GetHandleId(this.getUnit())) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Unload event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and unloaded unit " + GetUnitName(GetUnloadedUnit()) + " with handle ID " + I2S(GetHandleId(GetUnloadedUnit())) + " and handle ID of the time object unit " + I2S(GetHandleId(this.getUnit())) + "|r")
         return GetUnloadedUnit() == this.getUnit()
     endmethod
 
