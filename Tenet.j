@@ -2227,7 +2227,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerFunctionUnload takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
-        call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadedUnit()) + " and loaded unit " + GetUnitName(GetUnloadingTransportUnit()) + "|r")
+        call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and loaded unit " + GetUnitName(GetUnloadedUnit()) + "|r")
         call this.addChangeEvent(this.getTime().getTime(), ChangeEventUnitUnloaded.create(GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
@@ -4711,9 +4711,12 @@ library Transports initializer Init
         set i = 0
         loop
             exitwhen (i == unloadTriggersSize)
+            //call PrintMsg("Executing unload trigger " + I2S(GetHandleId(unloadTriggers[i])) + " with index " + I2S(i) + " with total size " + I2S(unloadTriggersSize))
             call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), UNLOADED_UNIT_KEY, unloadedUnit)
             call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), UNLOADING_TRANSPORT_UNIT_KEY, transportUnit)
-            call TriggerExecute(unloadTriggers[i])
+            if (TriggerEvaluate(unloadTriggers[i])) then
+                call TriggerExecute(unloadTriggers[i])
+            endif
             set i = i + 1
         endloop
     endfunction

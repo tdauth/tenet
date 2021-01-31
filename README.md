@@ -26,7 +26,9 @@ This improves the performance of the map and prevents some unfair strategies.
 
 ## Screenshots
 
-TODO Add Screenshots.
+|               |
+| ------------- |
+| ![Stalsk-12](./screenshots/Tenet1.png "Stalsk-12") |
 
 ## Videos
 
