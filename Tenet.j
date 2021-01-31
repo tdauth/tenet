@@ -4506,14 +4506,21 @@ library Transports initializer Init
     native UnitAlive takes unit u returns boolean
 
     globals
-        hashtable whichHashTable = InitHashtable()
-        hashtable transportsHashTable = InitHashtable()
-        hashtable transportersHashTable = InitHashtable()
-        trigger loadTrigger = CreateTrigger()
-        trigger unloadTrigger = CreateTrigger()
-        trigger array unloadTriggers[1000]
-        integer unloadTriggersSize = 0
-        hashtable unloadTriggersHashTable = InitHashtable()
+        private group transportsUnits = CreateGroup()
+        private hashtable whichHashTable = InitHashtable()
+        private hashtable transportersHashTable = InitHashtable()
+        private trigger loadTrigger = CreateTrigger()
+        private trigger unloadTrigger = CreateTrigger()
+        private trigger array unloadTriggers[1000]
+        private integer unloadTriggersSize = 0
+        private hashtable unloadTriggersHashTable = InitHashtable()
+
+        private constant integer TRANSPORTED_UNITS_KEY = 0
+
+        private constant integer UNIT_TRANSPORT_KEY = 0
+
+        private constant integer UNLOADED_UNIT_KEY = 0
+        private constant integer UNLOADING_TRANSPORT_UNIT_KEY = 1
     endglobals
 
     private function PrintMsg takes string msg returns nothing
@@ -4527,15 +4534,15 @@ library Transports initializer Init
     endfunction
 
     private function ClearTransportedUnits takes unit whichUnit returns nothing
-        if (HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), 0)) then
-            call DestroyGroup(LoadGroupHandle(whichHashTable, GetHandleId(whichUnit), 0))
-            call RemoveSavedHandle(whichHashTable, GetHandleId(whichUnit), 0)
+        if (HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), TRANSPORTED_UNITS_KEY)) then
+            call DestroyGroup(LoadGroupHandle(whichHashTable, GetHandleId(whichUnit), TRANSPORTED_UNITS_KEY))
+            call RemoveSavedHandle(whichHashTable, GetHandleId(whichUnit), TRANSPORTED_UNITS_KEY)
         endif
     endfunction
 
     function GetTransportedUnits takes unit whichUnit returns group
-        if (HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), 0)) then
-            return CopyGroup(LoadGroupHandle(whichHashTable, GetHandleId(whichUnit), 0))
+        if (HaveSavedHandle(whichHashTable, GetHandleId(whichUnit), TRANSPORTED_UNITS_KEY)) then
+            return CopyGroup(LoadGroupHandle(whichHashTable, GetHandleId(whichUnit), TRANSPORTED_UNITS_KEY))
         else
             return CreateGroup()
         endif
@@ -4549,38 +4556,33 @@ library Transports initializer Init
     endfunction
 
     private function UpdateTransportedUnits takes unit transport, group transportedUnits returns nothing
-        call SaveGroupHandle(whichHashTable, GetHandleId(transport), 0, transportedUnits)
+        call ClearTransportedUnits(transport)
+        call SaveGroupHandle(whichHashTable, GetHandleId(transport), TRANSPORTED_UNITS_KEY, transportedUnits)
     endfunction
 
     private function ClearTransportsUnits takes nothing returns nothing
-        if (HaveSavedHandle(transportsHashTable, 1, 1)) then
-            call DestroyGroup(LoadGroupHandle(transportsHashTable, 1, 1))
-            call RemoveSavedHandle(transportsHashTable, 1, 1)
-        endif
+        call GroupClear(transportsUnits)
     endfunction
 
     function GetTransportsUnits takes nothing returns group
-        if (HaveSavedHandle(transportsHashTable, 1, 1)) then
-            return CopyGroup(LoadGroupHandle(transportsHashTable, 1, 1))
-        else
-            return CreateGroup()
-        endif
+        return CopyGroup(transportsUnits)
     endfunction
 
-    private function UpdateTransportsUnits takes group transportsUnits returns nothing
-        call SaveGroupHandle(transportsHashTable, 1, 1, transportsUnits)
+    private function UpdateTransportsUnits takes group whichGroup returns nothing
+        call ClearTransportsUnits()
+        call GroupAddGroup(whichGroup, transportsUnits)
     endfunction
 
     private function ClearUnitTransport takes unit whichUnit returns nothing
-        call RemoveSavedHandle(transportersHashTable, GetHandleId(whichUnit), 1)
+        call RemoveSavedHandle(transportersHashTable, GetHandleId(whichUnit), UNIT_TRANSPORT_KEY)
     endfunction
 
     private function UpdateUnitTransport takes unit whichUnit, unit transport returns nothing
-        call SaveUnitHandle(transportersHashTable, GetHandleId(whichUnit), 1, transport)
+        call SaveUnitHandle(transportersHashTable, GetHandleId(whichUnit), UNIT_TRANSPORT_KEY, transport)
     endfunction
 
     function GetUnitTransport takes unit whichUnit returns unit
-        return LoadUnitHandle(transportersHashTable, GetHandleId(whichUnit), 1)
+        return LoadUnitHandle(transportersHashTable, GetHandleId(whichUnit), UNIT_TRANSPORT_KEY)
     endfunction
 
     function IsUnitAnyTransport takes unit whichUnit returns boolean
@@ -4588,11 +4590,11 @@ library Transports initializer Init
     endfunction
 
     function GetUnloadedUnit takes nothing returns unit
-        return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), 0)
+        return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), UNLOADED_UNIT_KEY)
     endfunction
 
     function GetUnloadingTransportUnit takes nothing returns unit
-        return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), 1)
+        return LoadUnitHandle(unloadTriggersHashTable, GetHandleId(GetTriggeringTrigger()), UNLOADING_TRANSPORT_UNIT_KEY)
     endfunction
 
     private function ForFunctionUnload takes nothing returns nothing
@@ -4611,6 +4613,8 @@ library Transports initializer Init
         local unit transporter = LoadUnitHandle(whichHashTable, GetHandleId(GetTriggeringTrigger()), 0)
         local group whichGroup = LoadGroupHandle(whichHashTable, GetHandleId(GetTriggeringTrigger()), 1)
         local real pollTimeOut = LoadReal(whichHashTable, GetHandleId(GetTriggeringTrigger()), 2)
+        local real totalTimeOut = LoadReal(whichHashTable, GetHandleId(GetTriggeringTrigger()), 3)
+        local real time = 0.0
         local boolean cancel = false
         local unit first = null
         loop
@@ -4620,8 +4624,9 @@ library Transports initializer Init
             call GroupRemoveUnit(whichGroup, first)
             loop
                 exitwhen (cancel or GetUnitTransport(first) == transporter or IsUnitDeadBJ(first))
-                set cancel = IsUnitDeadBJ(transporter)
+                set cancel = IsUnitDeadBJ(transporter) or time > totalTimeOut
                 call TriggerSleepAction(pollTimeOut)
+                set time = time + pollTimeOut
             endloop
         endloop
         call GroupClear(whichGroup)
@@ -4632,12 +4637,13 @@ library Transports initializer Init
         call DestroyTrigger(GetTriggeringTrigger())
     endfunction
 
-    function LoadAll takes unit transporter, group whichGroup, real pollTimeOut returns nothing
+    function LoadAll takes unit transporter, group whichGroup, real pollTimeOut, real totalTimeOut returns nothing
         local trigger whichTrigger = CreateTrigger()
         call TriggerAddAction(whichTrigger, function TriggerActionLoadAllSeparate)
         call SaveUnitHandle(whichHashTable, GetHandleId(whichTrigger), 0, transporter)
         call SaveGroupHandle(whichHashTable, GetHandleId(whichTrigger), 1, CopyGroup(whichGroup))
         call SaveReal(whichHashTable, GetHandleId(whichTrigger), 2, pollTimeOut)
+        call SaveReal(whichHashTable, GetHandleId(whichTrigger), 3, totalTimeOut)
         call TriggerExecute(whichTrigger)
     endfunction
 
@@ -4705,8 +4711,8 @@ library Transports initializer Init
         set i = 0
         loop
             exitwhen (i == unloadTriggersSize)
-            call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), 0, unloadedUnit)
-            call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), 1, transportUnit)
+            call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), UNLOADED_UNIT_KEY, unloadedUnit)
+            call SaveUnitHandle(unloadTriggersHashTable, GetHandleId(unloadTriggers[i]), UNLOADING_TRANSPORT_UNIT_KEY, transportUnit)
             call TriggerExecute(unloadTriggers[i])
             set i = i + 1
         endloop
