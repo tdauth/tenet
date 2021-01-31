@@ -32,7 +32,7 @@ This improves the performance of the map and prevents some unfair strategies.
 
 ## Videos
 
-[Video of an early version of the scenario on YouTube](https://www.youtube.com/watch?v=qVlEL9Wzz_Y)
+[![Videos of an early version of the scenario on YouTube](https://img.youtube.com/vi/ph8NPSnhBY4/0.jpg)](https://www.youtube.com/watch?v=ph8NPSnhBY4&list=PLmfeGbBvSVGCxbiaR7wz9FFEZrUI3nVAw&ab_channel=WarcraftIII%3AReforgedModifications)
 
 ## Concept of Time Inversion
 
