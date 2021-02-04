@@ -1061,7 +1061,6 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("Restore loaded event!")
         call PrintMsg("|cff00ff00Hurray: Restore loaded event with transport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call TimeObjectUnit.fromUnit(transporter).setRestoredOrderId(String2OrderIdBJ("unload"))
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
@@ -2223,7 +2222,7 @@ struct TimeObjectUnit extends TimeObjectImpl
 
     private static method triggerConditionUnload takes nothing returns boolean
         local thistype this = LoadData(GetTriggeringTrigger())
-        call PrintMsg("|cff00ff00Hurray: Unload event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and unloaded unit " + GetUnitName(GetUnloadedUnit()) + " with handle ID " + I2S(GetHandleId(GetUnloadedUnit())) + " and handle ID of the time object unit " + I2S(GetHandleId(this.getUnit())) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Unload event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and unloaded unit " + GetUnitName(GetUnloadedUnit()) + " with handle ID " + I2S(GetHandleId(GetUnloadedUnit())) + " and handle ID of the time object unit " + I2S(GetHandleId(this.getUnit())) + "|r")
         return GetUnloadedUnit() == this.getUnit()
     endmethod
 
