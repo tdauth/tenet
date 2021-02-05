@@ -475,6 +475,8 @@ interface TimeFrame
     public method flush takes nothing returns nothing
 
     public method restore takes TimeObject timeObject, integer time returns nothing
+
+    public method print takes nothing returns nothing
 endinterface
 
 interface TimeLine
@@ -490,6 +492,8 @@ interface TimeLine
      * @return Returns true if there is a time frame. Otherwise, it returns false.
      */
     public method restore takes TimeObject timeObject, integer time returns boolean
+
+    public method print takes integer time returns nothing
 endinterface
 
 interface TimeObject
@@ -544,6 +548,14 @@ interface TimeObject
      * Called when the global time changes its direction contrary to the objects time direction.
      */
     public method onTimeInvertsDifferent takes integer time returns nothing
+
+    /**
+     * Watching a time object helps to debug it.
+     */
+    public method isWatched takes nothing returns boolean
+    public method watch takes nothing returns nothing
+    public method unwatch takes nothing returns nothing
+    public method print takes integer time returns nothing
 endinterface
 
 interface Time
@@ -1061,6 +1073,7 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     private unit transporter
 
     public stub method restore takes nothing returns nothing
+        call PrintMsg("Restore loaded event!")
         call PrintMsg("|cff00ff00Hurray: Restore loaded event with transport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call TimeObjectUnit.fromUnit(transporter).setRestoredOrderId(String2OrderIdBJ("unload"))
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
@@ -1390,6 +1403,7 @@ endstruct
 
 struct TimeFrameImpl extends TimeFrame
     private ChangeEventImpl changeEventsHead = 0
+    private boolean isPrinting = false
 
     public stub method getChangeEventsSize takes nothing returns integer
         if (this.changeEventsHead == 0) then
@@ -1433,6 +1447,18 @@ struct TimeFrameImpl extends TimeFrame
             call this.changeEventsHead.onTraverse(this.changeEventsHead)
         else
             //call PrintMsg("Restore events with size: 0")
+        endif
+    endmethod
+
+    public stub method print takes nothing returns nothing
+        if (this.changeEventsHead != 0) then
+            set this.isPrinting = true
+            call this.changeEventsHead.traverseBackwards()
+            // The head element is excluded from traverseBackwards
+            call this.changeEventsHead.onTraverse(this.changeEventsHead)
+            set this.isPrinting = false
+        else
+            call PrintMsg("Print events with size: 0")
         endif
     endmethod
 
@@ -1538,6 +1564,14 @@ struct TimeLineImpl extends TimeLine
         return false
     endmethod
 
+    public stub method print takes integer time returns nothing
+        local integer timeDeltaFromStartFrame = this.getDeltaFromAbsoluteTime(time)
+
+        if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
+            call this.getTimeFrame(timeDeltaFromStartFrame).print()
+        endif
+    endmethod
+
     public static method create takes TimeObject timeObject returns thistype
         local thistype this = thistype.allocate()
         set this.timeObject = timeObject
@@ -1559,6 +1593,7 @@ struct TimeObjectImpl extends TimeObject
     private boolean recordingChanges
     private integer recordingChangesStartTime
     private integer recordingChangesStopTime
+    private boolean watched
 
     public stub method getName takes nothing returns string
         local string inverted = "no"
@@ -1677,6 +1712,23 @@ struct TimeObjectImpl extends TimeObject
     public stub method onTimeInvertsDifferent takes integer time returns nothing
     endmethod
 
+    public stub method isWatched takes nothing returns boolean
+        return this.watched
+    endmethod
+
+    public stub method watch takes nothing returns nothing
+        set this.watched = true
+    endmethod
+
+    public stub method unwatch takes nothing returns nothing
+        set this.watched = false
+    endmethod
+
+    public stub method print takes integer time returns nothing
+        call PrintMsg("Restoring " + this.getName() + " at time " + I2S(time))
+        call this.getTimeLine().print(time)
+    endmethod
+
     public static method create takes Time whichTime, integer startTime, boolean inverted returns thistype
         local thistype this = thistype.allocate()
         set this.whichTime = whichTime
@@ -1684,6 +1736,7 @@ struct TimeObjectImpl extends TimeObject
         set this.inverted = inverted
         set this.timeLine = TimeLineImpl.create(this)
         set this.recordingChanges = false
+        set this.watched = false
 
         return this
     endmethod
@@ -2761,7 +2814,7 @@ struct TimeImpl extends Time
 
     public stub method setTime takes integer time returns nothing
         local integer i = 0
-        local TimeObject timeObject = 0
+        local TimeObjectImpl timeObject = 0
         local TimeLine timeLine = 0
         local boolean moreThanOneTick = IAbsBJ(this.getTime() - time) > 1
         set this.time = time
@@ -2772,6 +2825,11 @@ struct TimeImpl extends Time
             set timeLine = timeObject.getTimeLine()
             //call PrintMsg("Time object with index " + I2S(i) + " with name " + timeObject.getName())
             if (timeObject.isInverted() != this.isInverted()) then
+
+                if (timeObject.isWatched()) then
+                    call timeObject.print(time)
+                endif
+
                 //call PrintMsg("Restore changes for object: " + timeObject.getName())
                 // restore not inverted time line if possible
                 call timeObject.onRestore(time)
