@@ -464,18 +464,20 @@ function DurationToTime takes real duration returns integer
     return R2I(duration / TIMER_PERIODIC_INTERVAL)
 endfunction
 
-interface ChangeEvent
+interface ChangeEvent // TODO [100000]
+    public method getTimeFrame takes nothing returns TimeFrame
+
     public method getName takes nothing returns string
 
     public method onChange takes integer time returns nothing
     public method restore takes nothing returns nothing
 
-    public method getTimeFrame takes nothing returns TimeFrame
-
     public method print takes nothing returns nothing
 endinterface
 
-interface TimeFrame
+interface TimeFrame[100000]
+    public method getTimeLine takes nothing returns TimeLine
+
     public method getChangeEventsSize takes nothing returns integer
     public method addChangeEvent takes ChangeEvent changeEvent returns integer
     public method flush takes nothing returns nothing
@@ -486,6 +488,8 @@ interface TimeFrame
 endinterface
 
 interface TimeLine
+    public method getTimeObject takes nothing returns TimeObject
+
     public method getStartTimeFrame takes nothing returns TimeFrame
     public method getTimeFrame takes integer timeDeltaFromStartFrame returns TimeFrame
     public method getTimeFramesSize takes nothing returns integer
@@ -1504,8 +1508,13 @@ struct ChangeEventPlayerChats extends ChangeEventImpl
 endstruct
 
 struct TimeFrameImpl extends TimeFrame
+    private TimeLine timeLine
     private ChangeEventImpl changeEventsHead = 0
     private boolean printing = false
+
+    public stub method getTimeLine takes nothing returns TimeLine
+        return this.timeLine
+    endmethod
 
     public stub method getChangeEventsSize takes nothing returns integer
         if (this.changeEventsHead == 0) then
@@ -1517,6 +1526,10 @@ struct TimeFrameImpl extends TimeFrame
     endmethod
 
     public stub method addChangeEvent takes ChangeEvent changeEvent returns integer
+        if (this.getTimeLine().getTimeObject().isWatched()) then
+            call PrintMsg("Adding change event " + changeEvent.getName() + " to " + this.getTimeLine().getTimeObject().getName())
+        endif
+
         if (this.changeEventsHead == 0) then
             set this.changeEventsHead = changeEvent
             call this.changeEventsHead.makeHead(changeEvent)
@@ -1569,6 +1582,12 @@ struct TimeFrameImpl extends TimeFrame
         return this.printing
     endmethod
 
+    public static method create takes TimeLine timeLine returns thistype
+        local thistype this = thistype.allocate()
+        set this.timeLine = timeLine
+        return this
+    endmethod
+
 endstruct
 
 /*
@@ -1579,6 +1598,10 @@ struct TimeLineImpl extends TimeLine
     private static hashtable timeFrames = InitHashtable()
     // max time for a time frame
     private integer timeFramesSize = 0
+
+    public stub method getTimeObject takes nothing returns TimeObject
+        return this.timeObject
+    endmethod
 
     public stub method getStartTimeFrame takes nothing returns TimeFrame
         return this.getTimeFrame(0)
@@ -1606,15 +1629,26 @@ struct TimeLineImpl extends TimeLine
         local TimeFrame timeFrame = 0
 
         if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
+            if (this.timeObject.isWatched()) then
+                call PrintMsg("Has time frame for object: " + this.timeObject.getName() + " at delta " + I2S(timeDeltaFromStartFrame))
+            endif
+
             return this.getTimeFrame(timeDeltaFromStartFrame)
         endif
 
-        set timeFrame = TimeFrameImpl.create()
-        //call PrintMsg("Adding time frame " + I2S(timeFrame) + " for object: " + this.timeObject.getName() + " at delta " + I2S(timeDeltaFromStartFrame))
+        set timeFrame = TimeFrameImpl.create(this)
+
+        if (this.timeObject.isWatched()) then
+            call PrintMsg("Adding time frame " + I2S(timeFrame) + " for object: " + this.timeObject.getName() + " at delta " + I2S(timeDeltaFromStartFrame))
+        endif
+
         if (timeFrame != 0) then
             call SaveInteger(thistype.timeFrames, this, timeDeltaFromStartFrame, timeFrame)
         endif
-        //call PrintMsg("Time frame is now " + I2S(this.getTimeFrame(timeDeltaFromStartFrame)) + " for object: " + this.timeObject.getName())
+
+        if (this.timeObject.isWatched()) then
+            call PrintMsg("Time frame is now " + I2S(this.getTimeFrame(timeDeltaFromStartFrame)) + " for object: " + this.timeObject.getName())
+        endif
 
         if (timeDeltaFromStartFrame >= this.timeFramesSize) then
             set this.timeFramesSize = timeDeltaFromStartFrame + 1
@@ -1675,8 +1709,10 @@ struct TimeLineImpl extends TimeLine
         local integer timeDeltaFromStartFrame = this.getDeltaFromAbsoluteTime(time)
 
         if (this.hasTimeFrame(timeDeltaFromStartFrame)) then
-            call PrintMsg("Has time frame at time " + I2S(time))
+            call PrintMsg("Restoring time line with time frame.")
             call this.getTimeFrame(timeDeltaFromStartFrame).print()
+        else
+            call PrintMsg("Restoring time line without any time frames.")
         endif
     endmethod
 
@@ -2144,6 +2180,10 @@ struct TimeObjectUnit extends TimeObjectImpl
             // prevents further interactions
             call SetUnitInvulnerable(this.whichUnit, true)
         endif
+
+        if (this.isWatched()) then
+            call PrintMsg("onTimeInvertsDifferent for " + this.getName() + " at time " + I2S(time))
+        endif
     endmethod
 
     public method getUnit takes nothing returns unit
@@ -2388,8 +2428,8 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionLoad takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         local integer time = this.getTime().getTime()
-        call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
-        call PrintMsg("At time " + I2S(this.getTime().getTime()))
+        //call PrintMsg("|cff00ff00Hurray: Adding loaded event with transport " + GetUnitName(GetTransportUnit()) + " and loaded unit " + GetUnitName(GetLoadedUnit()) + "|r")
+        //call PrintMsg("At time " + I2S(this.getTime().getTime()))
         call this.addChangeEvent(time, ChangeEventUnitLoaded.create(this.addTimeFrame(time), GetLoadedUnit(), GetTransportUnit()))
     endmethod
 
@@ -2402,7 +2442,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private static method triggerFunctionUnload takes nothing returns nothing
         local thistype this = LoadData(GetTriggeringTrigger())
         local integer time = this.getTime().getTime()
-        call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and loaded unit " + GetUnitName(GetUnloadedUnit()) + "|r")
+        //call PrintMsg("|cff00ff00Hurray: Adding unloaded event with transport " + GetUnitName(GetUnloadingTransportUnit()) + " and loaded unit " + GetUnitName(GetUnloadedUnit()) + "|r")
         call this.addChangeEvent(time, ChangeEventUnitUnloaded.create(this.addTimeFrame(time), GetUnloadedUnit(), GetUnloadingTransportUnit()))
     endmethod
 
@@ -2925,8 +2965,8 @@ struct TimeImpl extends Time
     private integer time = 0
     private boolean inverted = false
     // TODO Use ListEx or something to avoid limitations.
-    private static constant integer MAX_TIME_OBJECTS = 500
-    private TimeObject array timeObjects[500]
+    private static constant integer MAX_TIME_OBJECTS = 1000
+    private TimeObject array timeObjects[1000]
     private integer timeObjectsSize = 0
     private integer normalObjectsSize = 0
     private integer timeInvertedObjectsSize = 0
@@ -3070,6 +3110,8 @@ struct TimeImpl extends Time
     public stub method start takes nothing returns nothing
         //call PrintMsg("Start timer")
         set this.time = 0
+        // this call makes sure that onTimeInvertsSame and onTimeInvertsDifferent etc. are called
+        call setInverted(this.isInverted())
         call TimerStart(this.whichTimer, TIMER_PERIODIC_INTERVAL, true, function thistype.timerFunction)
     endmethod
 

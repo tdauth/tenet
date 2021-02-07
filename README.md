@@ -6,13 +6,22 @@ A [Tenet](https://www.imdb.com/title/tt6723592)-style prototype map for Warcraft
 
 Download: [Tenet.w3x](./Tenet.w3x)
 
-This is a very basic 2 vs 2 map.
+## Scenario: Stalsk-12
+
+This is a very basic 2 vs 2 map which recreates the battle of Stalsk-12 from the movie with one additional player who can interfere in the events.
 Tenet soldiers fight against Sator's men.
-The Algorithm must be stolen by Tenet soldiers in time and brought to a certain location on the map.
+The Algorithm must be stolen by Tenet soldiers and brought to a certain location on the map in time.
 Sator's men have to keep the Algorithm at its original location until the time is over.
 
 The turnstile machine allows you to copy the Algorithm.
 All Algorithms should be at the specific locations on the map.
+
+### The Future/Inverted Gold Transports Player
+
+One additional player can play the future.
+The player has one non-inverted hero who has different abilities to send stuff from the future.
+He/she does also control inverted gold transports which must be protected.
+The player's goal is to secure as many gold transports as possible.
 
 ### The Turnstile Machine
 
@@ -23,6 +32,13 @@ When the time is inverted, all inverted units can be controlled again and all no
 There is a time limit how long the global time can be inverted.
 Besides the turnstile machine has a cooldown.
 This improves the performance of the map and prevents some unfair strategies.
+
+### The Clock
+
+The clock is a special item which allows you to reverse time for a little while.
+This will undo events and allow you to change the past.
+Other than the turnstile machine it does not just invert time but reverses events and then continues with the time flow in the same direction as before.
+During the reversal of time, nothing can changed.
 
 ## Screenshots
 
@@ -50,8 +66,18 @@ This improves the performance of the map and prevents some unfair strategies.
 * We can actually go backwards in time to a negative global clock value (so before the map has even started). Everything will disappear which has been created at the time 0.
 * This kind of system allows us to minimize the stored changes and time lines.
 
+### Limitations
+
+Not all events in Warcraft III: Reforged can be reversed that easily.
+There are tons of missing natives which require workarounds.
+For example, the training progress for units cannot be changed.
+Spells must be written customly to be reversed etc.
+The system tries to use workarounds to invert as much stuff as possible.
+Other things which can not be reversed, should at least be paused/stopped.
+
 ### TODO Interactions with inverted objects
 
+Currently, restored objects will be invulnerable to prevent them from being changed.
 Interacting with inverted items would be fun, too.
 For example a unit can be restored and drop an inverted item at some point.
 If you pick up the inverted item with a non-inverted hero, it should have the inverted effect!
@@ -60,3 +86,7 @@ If a restored inverted unit shoots at a non-inverted unit (if still possible), t
 ## Code
 
 vJass implementation: [Tenet.j](./Tenet.j)
+
+## vJass Syntax Highlightings
+
+On Windows I use my custom syntax highlightings from [syntaxhighlightings](https://github.com/tdauth/syntaxhighlightings) and place them in the directory `C:\Users\****\AppData\Local\org.kde.syntax-highlighting\syntax`.
