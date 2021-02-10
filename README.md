@@ -90,3 +90,9 @@ vJass implementation: [Tenet.j](./Tenet.j)
 ## vJass Syntax Highlightings
 
 On Windows I use my custom syntax highlightings from [syntaxhighlightings](https://github.com/tdauth/syntaxhighlightings) and place them in the directory `C:\Users\****\AppData\Local\org.kde.syntax-highlighting\syntax`.
+
+## Blizzard's JASS Code
+
+* [common.j](https://www.hiveworkshop.com/data/games/wc3/war3.w3mod/scripts/common.j)
+* [Blizzard.j](https://www.hiveworkshop.com/data/games/wc3/war3.w3mod/scripts/blizzard.j)
+* [common.ai](https://www.hiveworkshop.com/data/games/wc3/war3.w3mod/scripts/common.ai)
