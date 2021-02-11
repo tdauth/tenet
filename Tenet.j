@@ -464,7 +464,7 @@ function DurationToTime takes real duration returns integer
     return R2I(duration / TIMER_PERIODIC_INTERVAL)
 endfunction
 
-interface ChangeEvent // TODO [100000]
+interface ChangeEvent // TODO Massively increase the number of instances DurationToTime(Max Mission Time + Max Inversion Time) * MAX_OBJECTS * 30 / [10000]
     public method getTimeFrame takes nothing returns TimeFrame
 
     public method getName takes nothing returns string
@@ -475,7 +475,7 @@ interface ChangeEvent // TODO [100000]
     public method print takes nothing returns nothing
 endinterface
 
-interface TimeFrame[100000]
+interface TimeFrame[100000] // TODO Massively increase the number of instances DurationToTime(Max Mission Time + Max Inversion Time) * MAX_OBJECTS
     public method getTimeLine takes nothing returns TimeLine
 
     public method getChangeEventsSize takes nothing returns integer
@@ -5486,5 +5486,46 @@ function SetHeroAbilityLevel takes unit hero, integer abilityId, integer level r
 
     return false
 endfunction
+
+endlibrary
+
+library TenetGui requires Tenet
+
+    globals
+        private trigger frameTrigger = null
+    endglobals
+
+    function TriggerActionDialogAcceptFrame takes nothing returns nothing
+        call BlzFrameSetVisible(BlzGetTriggerFrame(), false)
+    endfunction
+
+    function CreateTimeGui takes player whichPlayer returns nothing
+        local trigger whichTrigger = CreateTrigger()
+        local framehandle frame = BlzCreateFrame("QuestButtonBaseTemplate", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), 0, 0)
+        local framehandle screenCenter = BlzCreateFrameByType("BACKDROP", "", frame, "", 0)
+        local framehandle button1 = BlzCreateFrameByType("GLUETEXTBUTTON", "name", frame, "ScriptDialogButton", 0)
+        call BlzFrameSetAbsPoint(frame, FRAMEPOINT_BOTTOMLEFT, 0.30, 0.30)
+        call BlzFrameSetSize(frame, 0.4, 0.4)
+        call BlzFrameAddText(frame, "Time")
+        if (GetLocalPlayer() == whichPlayer) then
+            call BlzFrameSetVisible(frame, true)
+        endif
+        // the not movingframe to show the difference more clear.
+        call BlzFrameSetAbsPoint(screenCenter, FRAMEPOINT_BOTTOMLEFT, 0.30, 0.30)
+        call BlzFrameSetSize(screenCenter, 0.02, 0.02)
+        call BlzFrameSetTexture(screenCenter, "replaceabletextures\\teamcolor\\teamcolor00", 0, false)
+        call BlzFrameSetAbsPoint(screenCenter, FRAMEPOINT_CENTER, 0.4, 0.3)
+        if (GetLocalPlayer() == whichPlayer) then
+            call BlzFrameSetVisible(screenCenter, true)
+        endif
+
+        call BlzFrameSetAbsPoint(button1, FRAMEPOINT_LEFT, 0.85, 0.1)
+        if (GetLocalPlayer() == whichPlayer) then
+            call BlzFrameSetVisible(button1, true)
+        endif
+
+        call BlzTriggerRegisterFrameEvent(frameTrigger, button1, FRAMEEVENT_DIALOG_ACCEPT)
+        call TriggerAddAction(frameTrigger, function TriggerActionDialogAcceptFrame)
+    endfunction
 
 endlibrary
