@@ -7,9 +7,11 @@ When the time inversion has ended, the time goes forward again and all non-inver
 The inverted objects are restored.
 Time inversion allows you to influence events of the past and to reverse certain effects.
 
-## Download
+## Play the Map
 
-Download: [tenet0.9.w3x](./tenet0.9.w3x)
+* [Discord Server](https://discord.gg/sAePsKe56p)
+* [Official download on Hiveworkshop](https://www.hiveworkshop.com/threads/tenet-0-9.334146/)
+* [Current development version](./tenet0.9.w3x)
 
 ## Scenario: Stalsk-12
 
