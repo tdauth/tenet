@@ -4,11 +4,11 @@ A [Tenet](https://www.imdb.com/title/tt6723592)-style prototype map for Warcraft
 
 ## Download
 
-Download: [Tenet.w3x](./Tenet.w3x)
+Download: [tenet1.0.w3x](./tenet1.0.w3x)
 
 ## Scenario: Stalsk-12
 
-This is a very basic 2 vs 2 map which recreates the battle of Stalsk-12 from the movie with one additional player who can interfere in the events.
+This is a very basic 2 vs 2 players map which recreates the final battle of Stalsk-12 from the movie Tenet with one additional player who can interfere in the events.
 Tenet soldiers fight against Sator's men.
 The Algorithm must be stolen by Tenet soldiers and brought to a certain location on the map in time.
 Sator's men have to keep the Algorithm at its original location until the time is over.
@@ -96,3 +96,47 @@ On Windows I use my custom syntax highlightings from [syntaxhighlightings](https
 * [common.j](https://www.hiveworkshop.com/data/games/wc3/war3.w3mod/scripts/common.j)
 * [Blizzard.j](https://www.hiveworkshop.com/data/games/wc3/war3.w3mod/scripts/blizzard.j)
 * [common.ai](https://www.hiveworkshop.com/data/games/wc3/war3.w3mod/scripts/common.ai)
+
+## Credits
+
+* Map: Baradé
+* [Tenet](https://www.imdb.com/title/tt6723592) (movie/idea): Christopher Nolan
+* LinkedList modules: AGD (HiveWorkshop.com)
+* TimerUtils: Vexorian
+* ReverseAnimation: Pyrogasm
+* Tank model and icon: Illidan(Evil)X (HiveWorkshop.com)
+* Tank factory model: Mr. Bob (HiveWorkshop.com)
+* Container model: Illidan(Evil)X (HiveWorkshop.com)
+* Helicopter model: Kofi_Banan (HiveWorkshop.com)
+* Railway models: SeW (HiveWorkshop.com)
+* Train models: Kofi_Banan (HiveWorkshop.com)
+* Humvee model: Kofi_Banan (HiveWorkshop.com)
+* Turret models: MiniMage (HiveWorkshop.com)
+* Jeep icon: Illidan(Evil)X (HiveWorkshop.com)
+* RPG icon: Zombie (HiveWorkshop.com)
+* Stinger icon: Zombie (HiveWorkshop.com)
+* Ambulance model: skrab (HiveWorkshop.com)
+* Police car model: skrab (HiveWorkshop.com)
+* Firetruck model: skrab (HiveWorkshop.com)
+* Barracks model: Mechanical Man (HiveWorkshop.com)
+* Su-35 Super Flanker model: Fingolfin (HiveWorkshop.com)
+* Gold bars models: communist_orc (HiveWorkshop.com)
+* Safe model: Mike (HiveWorkshop.com)
+* Gold bar item model and icons: KAIL333XZ (HiveWorkshop.com)
+* Algorithm item model and icons: KAIL333XZ (HiveWorkshop.com)
+* Cargo helicopter icon: Deon (HiveWorkshop.com)
+* Fighter jet icon: purparisien (HiveWorkshop.com)
+* Sports car icon: TheRandomDude (HiveWorkshop.com)
+* Truck icon: Hayate (HiveWorkshop.com)
+* Turnstile machine model: Baradé
+* Gate model: Baradé
+* Turnstile machine texture: www.textures4photoshop.com
+* Gate texture: texturelib.com
+* Loading screen model: HiveWorkshop.com
+* Loading screen texture: movie Tenet
+* Shaft model: Baradé
+* Shaft texture: freepik.com
+* Hero Glow model: assasin_lord (HiveWorkshop.com)
+* Ruin buildings models: Fingolfin (HiveWorkshop.com)
+* [C4 model](https://www.hiveworkshop.com/threads/c4-item.271012/): Grey Knight
+* [BTNsatchel}(https://www.hiveworkshop.com/threads/btnsatchel.121971/): Zombie
