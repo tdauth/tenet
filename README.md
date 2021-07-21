@@ -175,4 +175,5 @@ On Windows I use my custom syntax highlightings from [syntaxhighlightings](https
 * Hero Glow model: assasin_lord (HiveWorkshop.com)
 * Ruin buildings models: Fingolfin (HiveWorkshop.com)
 * [C4 model](https://www.hiveworkshop.com/threads/c4-item.271012/): Grey Knight
-* [BTNsatchel}(https://www.hiveworkshop.com/threads/btnsatchel.121971/): Zombie
+* [BTNsatchel](https://www.hiveworkshop.com/threads/btnsatchel.121971/): Zombie
+* [Logo](https://d13ezvd6yrslxm.cloudfront.net/wp/wp-content/images/tent-banner-logo-700x324.jpg): Movie Tenet
