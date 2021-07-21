@@ -1175,8 +1175,8 @@ struct ChangeEventUnitLoaded extends ChangeEventUnit
     endmethod
 
     public stub method restore takes nothing returns nothing
-        call PrintMsg("Restore loaded event!")
-        call PrintMsg("|cff00ff00Hurray: Restore loaded event with transport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
+        //call PrintMsg("Restore loaded event!")
+        //call PrintMsg("|cff00ff00Hurray: Restore loaded event with transport " + GetUnitName(transporter) + " and loaded unit " + GetUnitName(this.getUnit()) + "|r")
         call TimeObjectUnit.fromUnit(transporter).setRestoredOrderId(String2OrderIdBJ("unload"))
         call IssueTargetOrderBJ(transporter, "unload", this.getUnit())
     endmethod
@@ -1983,6 +1983,47 @@ struct TimeObjectMusicInverted extends TimeObjectImpl
 
 endstruct
 
+/**
+ * Helper to restore the previous order before the time was inverted. This helps you to continue doing stuff when the time is finally inverted to the original direction.
+ */
+struct PreviousUnitOrder
+	private TimeObjectUnit timeObjectUnit
+	private integer orderId = 0
+	private widget target = null
+	
+	public method store takes nothing returns nothing
+		if (GetUnitCurrentOrder(this.timeObjectUnit.getUnit()) == OrderId("smart")) then
+			set this.orderId = GetUnitCurrentOrder(this.timeObjectUnit.getUnit())
+		elseif (GetUnitCurrentOrder(this.timeObjectUnit.getUnit()) == OrderId("resumeharvesting")) then
+			set this.orderId = GetUnitCurrentOrder(this.timeObjectUnit.getUnit())
+		endif
+	endmethod
+	
+	public method restore takes nothing returns nothing
+		if (this.orderId != 0) then
+			//call PrintMsg("Restoring previous unit order for unit " + GetUnitName(this.timeObjectUnit.getUnit()) + " with order ID " + I2S(this.orderId) + " and order " + OrderId2String(this.orderId))
+			if (this.target != null) then
+				call IssueTargetOrderById(this.timeObjectUnit.getUnit(), this.orderId, this.target)
+			else
+				call IssueImmediateOrderById(this.timeObjectUnit.getUnit(), this.orderId)
+			endif
+		endif
+	endmethod
+	
+	public method clear takes nothing returns nothing
+		set this.orderId = 0
+		set this.target = null
+	endmethod
+	
+	public static method create takes TimeObjectUnit timeObjectUnit returns thistype
+		local thistype this = thistype.allocate()
+		set this.timeObjectUnit = timeObjectUnit
+		
+		return this
+	endmethod
+	
+endstruct
+
 struct TimeObjectUnit extends TimeObjectImpl
     private unit whichUnit
     private player originalOwner
@@ -1993,6 +2034,7 @@ struct TimeObjectUnit extends TimeObjectImpl
     private boolean isStanding
     private integer restoredOrderId = 0
     private integer constructionStartTime
+	private PreviousUnitOrder previousUnitOrder
     private trigger orderTrigger
     private trigger pickupTrigger
     private trigger dropTrigger
@@ -2097,6 +2139,9 @@ struct TimeObjectUnit extends TimeObjectImpl
 
         // is not restored anymore
         call this.clearRestoredOrder()
+		
+		// Allows you to see hero icons, units etc. again.
+		call SetUnitOwner(this.whichUnit, this.originalOwner, false)
 
         //call EnableTrigger(this.orderTrigger)
         call EnableTrigger(this.pickupTrigger)
@@ -2131,6 +2176,9 @@ struct TimeObjectUnit extends TimeObjectImpl
         if (IsUnitType(this.whichUnit, UNIT_TYPE_HERO)) then
             call SuspendHeroXPBJ(false, this.whichUnit)
         endif
+
+		// restore certain orders to continue with activities before the time inversion
+		call this.previousUnitOrder.restore()
 
         call this.updateOrder(GetUnitCurrentOrder(this.whichUnit))
     endmethod
@@ -2180,6 +2228,10 @@ struct TimeObjectUnit extends TimeObjectImpl
             // prevents further interactions
             call SetUnitInvulnerable(this.whichUnit, true)
         endif
+		
+		// Hides the hero icon.
+		call SetUnitOwner(this.whichUnit, Player(PLAYER_NEUTRAL_PASSIVE), false)
+		call UnitShareVision(this.whichUnit, this.originalOwner, true)
 
         if (this.isWatched()) then
             call PrintMsg("onTimeInvertsDifferent for " + this.getName() + " at time " + I2S(time))
@@ -2193,6 +2245,10 @@ struct TimeObjectUnit extends TimeObjectImpl
     public method getOriginalOwner takes nothing returns player
         return this.originalOwner
     endmethod
+	
+	public method setOriginalOwner takes player owner returns nothing
+		set this.originalOwner = owner
+	endmethod
 
     public method addChangeEventPosition takes integer time, real x, real y, real facing returns nothing
         local ChangeEventUnitPosition changeEventPosition = ChangeEventUnitPosition.create(this.addTimeFrame(time), whichUnit)
@@ -2294,6 +2350,7 @@ struct TimeObjectUnit extends TimeObjectImpl
             set this.isMoving = true
             set this.isStanding = false
             call this.startRecordingChanges(this.getTime().getTime())
+			call this.previousUnitOrder.store()
         elseif (orderId == String2OrderIdBJ("stop") or orderId == String2OrderIdBJ("halt") or orderId == String2OrderIdBJ("holdposition") or orderId == 0) then
             //call PrintMsg("Stop order for unit: " + GetUnitName(this.whichUnit))
             if (not UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
@@ -2307,12 +2364,15 @@ struct TimeObjectUnit extends TimeObjectImpl
             set this.isMoving = false
             set this.isRepairing = false
             set this.isStanding = true
+			call this.previousUnitOrder.clear()
             //call PrintMsg("Unit " + GetUnitName(this.getUnit()) + " is initially standing")
         elseif (orderId == String2OrderIdBJ("repair")) then
             set this.isRepairing = true
             set this.isStanding = false
             call this.startRecordingChanges(this.getTime().getTime())
+			call this.previousUnitOrder.clear()
         else
+			call this.previousUnitOrder.clear()
             set this.isStanding = false // all other orders cancel standing as well
             if (UnitTypes.recordStand(GetUnitTypeId(this.getUnit()))) then
                 //call PrintMsg("Unit " + GetUnitName(this.getUnit()) + " stops recording stand")
@@ -2622,6 +2682,8 @@ struct TimeObjectUnit extends TimeObjectImpl
         set this.isRepairing = false
         set this.isBeingConstructed = false
         set this.isStanding = false
+		set this.previousUnitOrder = PreviousUnitOrder.create(this)
+		set this.wasInvulnerableBeforeTimeInvert = BlzIsUnitInvulnerable(this.whichUnit)
 
         if (inverted) then
             call BlzSetUnitName(whichUnit, GetUnitName(whichUnit) + " Inverted")
@@ -2715,6 +2777,7 @@ struct TimeObjectUnit extends TimeObjectImpl
         call FlushData(this.whichUnit)
         set this.whichUnit = null
 
+		call this.previousUnitOrder.destroy()
         call this.destroyTriggers()
     endmethod
 
@@ -2988,6 +3051,15 @@ struct TimeImpl extends Time
             set timeObject = this.timeObjects[i]
             set timeLine = timeObject.getTimeLine()
             //call PrintMsg("Time object with index " + I2S(i) + " with name " + timeObject.getName())
+			
+			// This might lead to calling onExists multiple times but makes absolutely sure that the object does exist!
+			// Call onExists if it is multiple ticks and the start time was in that range or for one tick if its exactly the start time.
+			if ((moreThanOneTick and (timeObject.isInverted() and time <= timeObject.getStartTime()) or (not timeObject.isInverted() and time >= timeObject.getStartTime())) or (not moreThanOneTick and (timeObject.isInverted() and time == timeObject.getStartTime()) or (not timeObject.isInverted() and time == timeObject.getStartTime()))) then
+				//call PrintMsg("Calling on exists at time " + I2S(time) + " for object " + timeObject.getName())
+				call timeObject.onExists(time, this.isInverted())
+			endif
+			
+			// restore all time objects which go into a different direction than the current time
             if (timeObject.isInverted() != this.isInverted()) then
 
                 if (timeObject.isWatched()) then
@@ -2998,14 +3070,8 @@ struct TimeImpl extends Time
                 // restore not inverted time line if possible
                 call timeObject.onRestore(time)
                 call timeLine.restore(timeObject, time)
-            else
-                // This might lead to calling onExists multiple times but makes absolutely sure that the object does exist!
-                // Call onExists if it is multiple ticks and the start time was in that range or for one tick if its exactly the start time.
-                if ((moreThanOneTick and (timeObject.isInverted() and time <= timeObject.getStartTime()) or (not timeObject.isInverted() and time >= timeObject.getStartTime())) or (not moreThanOneTick and (timeObject.isInverted() and time == timeObject.getStartTime()) or (not timeObject.isInverted() and time == timeObject.getStartTime()))) then
-                    //call PrintMsg("Calling on exists at time " + I2S(time) + " for object " + timeObject.getName())
-                    call timeObject.onExists(time, this.isInverted())
-                endif
-
+			// record changes for all time objects which go into the same direction than the current time if necessary
+			else
                 if (timeObject.isRecordingChanges()) then
                     if (timeObject.shouldStopRecordingChanges()) then
                         call timeObject.stopRecordingChanges(time)

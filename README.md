@@ -1,10 +1,15 @@
 # Tenet
 
 A [Tenet](https://www.imdb.com/title/tt6723592)-style prototype map for Warcraft III: Reforged.
+It features time inversion a concept introduced by the movie which allows you to invert objects and change the direction of the time backwards for a limited amount of time.
+During this time period only inverted objects can be used to interact with stuff.
+When the time inversion has ended, the time goes forward again and all non-inverted objects can be used again.
+The inverted objects are restored.
+Time inversion allows you to influence events of the past and to reverse certain effects.
 
 ## Download
 
-Download: [tenet1.0.w3x](./tenet1.0.w3x)
+Download: [tenet0.9.w3x](./tenet0.9.w3x)
 
 ## Scenario: Stalsk-12
 
@@ -23,6 +28,14 @@ The player has one non-inverted hero who has different abilities to send stuff f
 He/she does also control inverted gold transports which must be protected.
 The player's goal is to secure as many gold transports as possible.
 
+#### The Clock
+ 
+The clock is a special item which allows you to reverse time for a little while.
+This will undo events and allow you to change the past.
+Other than the turnstile machine it does not just invert time but reverses events and then continues with the time flow in the same direction as before.
+During the reversal of time, nothing can changed.
+Currently, it is only available to the future player.
+
 ### The Turnstile Machine
 
 There is one single turnstile machine on the map which can invert a group of units.
@@ -33,12 +46,23 @@ There is a time limit how long the global time can be inverted.
 Besides the turnstile machine has a cooldown.
 This improves the performance of the map and prevents some unfair strategies.
 
-### The Clock
+### Unoccupied Units
 
-The clock is a special item which allows you to reverse time for a little while.
-This will undo events and allow you to change the past.
-Other than the turnstile machine it does not just invert time but reverses events and then continues with the time flow in the same direction as before.
-During the reversal of time, nothing can changed.
+Some units belong to the player "Unoccupied" and can be used by any player when entering them.
+
+### Vehicles
+
+All vehicles must be occupied before using them.
+
+### Ruined Buildings
+
+Ruined buildings can be occupied by soldiers and be used as defensive positions.
+
+#### The Train
+
+The train is a vehicle which can be used by all players to transport units on the rails.
+It is an experimental feature which does not have any special meaning for the scenario.
+However, it is easier to be protected when using the train.
 
 ## Screenshots
 
@@ -86,6 +110,18 @@ If a restored inverted unit shoots at a non-inverted unit (if still possible), t
 ## Code
 
 vJass implementation: [Tenet.j](./Tenet.j)
+
+## AI
+
+The map has basic AI support for computer players.
+These are the AI scripts:
+
+* [Tenet.ai](./ai/Tenet.ai): Focus on attacking the enemy.
+* [Sator.ai](./ai/Sator.ai): Focus on defending their base.
+
+The AI should build a base, collect ressources and attack with basic units.
+It does not know how to handle vehicles, ruined buildings or the Turnstile machine.
+It does not know how to complete the mission as Tenet.
 
 ## vJass Syntax Highlightings
 
